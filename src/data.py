@@ -6,9 +6,16 @@ Why in-memory instead of a real database for the prototype:
   risk for no judging benefit at this stage.
 - All data here is SYNTHETIC (made up), per competition rules — no real SME
   or customer data is used anywhere in this project.
+
+If this were a production Orbyte module, this file is exactly where a real
+database (e.g. SQLite/Postgres via SQLAlchemy) would replace the Python list.
 """
 
 from datetime import date, timedelta
+
+# --- Synthetic seed data -----------------------------------------------
+# Represents invoices/quotations a small SME has issued to its customers.
+# past_late_count simulates that customer's payment history with this SME.
 
 INVOICES = [
     {
@@ -61,6 +68,8 @@ INVOICES = [
     },
 ]
 
+# Logs every reminder that a human has approved and "sent".
+# Each entry: timestamp, invoice_id, customer_name, message_sent, risk_tier, approved_by
 ACTIVITY_LOG = []
 
 
@@ -73,9 +82,14 @@ def get_invoice_by_id(invoice_id):
 
 def mark_overdue_invoices():
     """
-    TRIGGER step. Finds invoices that are unpaid and past due date.
-    Demo uses a manual button instead of a real daily schedule,
-    so judges see the exact moment the automation fires.
+    TRIGGER step of the automation journey.
+
+    Scans all invoices and flags any that are past their due date and still
+    unpaid. Returns the list of newly-identified overdue invoices.
+
+    In a real deployment this would run on a schedule (e.g. daily cron job).
+    For the live demo we trigger it manually via a button, so judges can see
+    the exact moment the automation fires.
     """
     overdue = []
     today = date.today()
@@ -86,8 +100,13 @@ def mark_overdue_invoices():
     return overdue
 
 
-def log_activity(invoice_id, customer_name, message_sent, risk_tier="N/A", approved_by="Owner"):
-    """OUTCOME step: records a human-approved action, so it stays visible and auditable."""
+def log_activity(invoice_id, customer_name, message_sent, risk_tier="", approved_by="Owner"):
+    """OUTCOME step: records a human-approved action, so it stays visible and auditable.
+
+    risk_tier records what ChaseFlow had recommended (low/medium/high) at the
+    time this reminder was approved — part of the audit trail, not just the
+    message text itself.
+    """
     from datetime import datetime
 
     entry = {

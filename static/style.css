@@ -140,6 +140,7 @@ a{ color:inherit; text-decoration:none; }
 .badge-paid{ background:var(--good-bg); color:var(--good); }
 .badge-overdue{ background:var(--bad-bg); color:var(--bad); }
 .badge-pending{ background:var(--warn-bg); color:var(--warn); }
+.badge-unpaid{ background:var(--blue-soft); color:var(--blue-dark); }
 
 /* risk tier badges, for use later in draft.html / review.html */
 .risk-low{ background:var(--good-bg); color:var(--good); }
