@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Overdue Invoices</h1>
+<p class="subtitle">Triggered just now — these invoices are past due and unpaid.</p>
+
+{% if overdue|length == 0 %}
+  <p>No overdue invoices right now. Nothing to chase.</p>
+{% else %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Customer</th>
+      <th>Amount (RM)</th>
+      <th>Days Overdue</th>
+      <th>Risk Tier</th>
+      <th>Recommended Action</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for inv in overdue %}
+    <tr>
+      <td>{{ inv.customer_name }}<br><small>{{ inv.past_late_count }} late payment(s) on record</small></td>
+      <td>{{ "%.2f"|format(inv.amount) }}</td>
+      <td>{{ inv.days_overdue }}</td>
+      <td><span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span></td>
+      <td>{{ inv.risk.recommended_action }}</td>
+      <td><a class="btn btn-small" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}">Generate Reminder</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

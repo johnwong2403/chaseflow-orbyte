@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review Reminder — {{ invoice.customer_name }}</h1>
+<p class="subtitle">ChaseFlow's draft. Nothing is sent until you approve it below.</p>
+
+<p>
+  <span class="badge risk-{{ draft.risk_tier }}">{{ draft.risk_tier|capitalize }} risk</span>
+  &nbsp; RM {{ "%.2f"|format(invoice.amount) }} &nbsp;·&nbsp;
+  {{ invoice.days_overdue }} days overdue &nbsp;·&nbsp;
+  {{ invoice.past_late_count }} late payment(s) on record
+</p>
+
+<p><strong>Recommended action:</strong> {{ draft.recommended_action }}</p>
+
+<form method="post" action="{{ url_for('approve_reminder', invoice_id=invoice.id) }}">
+  <input type="hidden" name="risk_tier" value="{{ draft.risk_tier }}">
+  <label for="message"><strong>Reminder message (edit if needed):</strong></label><br>
+  <textarea id="message" name="message" rows="6" style="width:100%; max-width:640px; margin-top:8px;">{{ draft.message }}</textarea>
+  <br><br>
+  <button type="submit" class="btn btn-primary">Approve &amp; Send</button>
+  <a class="btn btn-ghost" href="{{ url_for('check_overdue') }}">Cancel</a>
+</form>
+{% endblock %}

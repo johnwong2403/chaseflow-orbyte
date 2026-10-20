@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Activity Log</h1>
+<p class="subtitle">OUTCOME step — every reminder a human approved, kept here for audit.</p>
+
+{% if logs|length == 0 %}
+  <p>Nothing sent yet. Approved reminders will show up here.</p>
+{% else %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Customer</th>
+      <th>Risk Tier</th>
+      <th>Approved By</th>
+      <th>Message Sent</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.timestamp }}</td>
+      <td>{{ log.customer_name }}</td>
+      <td>
+        {% if log.risk_tier %}
+          <span class="badge risk-{{ log.risk_tier }}">{{ log.risk_tier|capitalize }}</span>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>{{ log.approved_by }}</td>
+      <td>{{ log.message_sent }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
