@@ -14,6 +14,7 @@ Automation journey (required by Domain 2):
 import os
 import sys
 
+# allow "from data import ..." style imports when run directly
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, render_template, redirect, url_for, request
@@ -21,19 +22,31 @@ from flask import Flask, render_template, redirect, url_for, request
 from data import INVOICES, ACTIVITY_LOG, mark_overdue_invoices, get_invoice_by_id, log_activity
 from reminder_ai import generate_reminder_draft, assess_invoice_risk
 
-app = Flask(__name__)
+# main.py lives in src/, but templates/ and static/ live one level up, at the
+# project root — point Flask there explicitly instead of relying on its
+# default (which looks next to this file, inside src/).
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(PROJECT_ROOT, "templates"),
+    static_folder=os.path.join(PROJECT_ROOT, "static"),
+)
 
 
 @app.route("/")
 def dashboard():
+    """Shows every invoice and its status — the starting point of the journey."""
     return render_template("dashboard.html", invoices=INVOICES)
 
 
 @app.route("/check-overdue")
 def check_overdue():
+    """TRIGGER step — scans invoices, then DECISION LOGIC assigns each one
+    a risk tier so the owner can see what matters most before acting."""
     overdue = mark_overdue_invoices()
     for inv in overdue:
         inv["risk"] = assess_invoice_risk(inv)
+    # highest risk first, so the most urgent customer is always at the top
     risk_order = {"high": 0, "medium": 1, "low": 2}
     overdue.sort(key=lambda inv: risk_order[inv["risk"]["risk_tier"]])
     return render_template("review.html", overdue=overdue)
@@ -41,6 +54,8 @@ def check_overdue():
 
 @app.route("/draft/<int:invoice_id>")
 def draft_reminder(invoice_id):
+    """LOGIC step — generates an editable AI draft (risk tier + recommended
+    action + message text) for one overdue invoice."""
     invoice = get_invoice_by_id(invoice_id)
     if invoice is None:
         return "Invoice not found", 404
@@ -50,6 +65,9 @@ def draft_reminder(invoice_id):
 
 @app.route("/approve/<int:invoice_id>", methods=["POST"])
 def approve_reminder(invoice_id):
+    """APPROVAL + OUTCOME step — human approves (optionally edited) text,
+    we 'send' it (simulated) and log it, including which risk tier and tone
+    ChaseFlow had recommended, so the Activity Log stays fully auditable."""
     invoice = get_invoice_by_id(invoice_id)
     if invoice is None:
         return "Invoice not found", 404
@@ -63,6 +81,7 @@ def approve_reminder(invoice_id):
 
 @app.route("/activity-log")
 def activity_log():
+    """OUTCOME step — every approved reminder is visible here, auditable."""
     return render_template("activity_log.html", logs=list(reversed(ACTIVITY_LOG)))
 
 

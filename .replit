@@ -1,5 +1,21 @@
+modules = ["python-3.11"]
 [nix]
 channel = "stable-25_05"
 
 [agent]
 expertMode = true
+
+[workflows]
+
+[[workflows.workflow]]
+name = "Run"
+mode = "sequential"
+author = 56208678
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 src/main.py"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
