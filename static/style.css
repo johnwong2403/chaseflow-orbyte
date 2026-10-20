@@ -1,0 +1,191 @@
+/* ChaseFlow for Orbyte — styled to match Orbyte's real brand (orbyte.my) */
+
+:root{
+  --bg:#eef1f9;
+  --paper:#ffffff;
+  --card:#f5f7fc;
+  --navy:#0d1b3e;
+  --ink:#101a33;
+  --ink-soft:#56607e;
+  --line:#dde2f0;
+  --blue:#1552f0;
+  --blue-dark:#0d3bc4;
+  --blue-soft:#e8edfd;
+  --good:#0f9d58;
+  --good-bg:#e4f7ec;
+  --warn:#b8860b;
+  --warn-bg:#fdf3dc;
+  --bad:#d23a3a;
+  --bad-bg:#fbe6e6;
+}
+
+*{ box-sizing:border-box; }
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Plus Jakarta Sans","Inter",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+h1{
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:-0.01em;
+  margin:0 0 4px 0;
+}
+
+a{ color:inherit; text-decoration:none; }
+
+.subtitle{
+  color:var(--ink-soft);
+  font-size:14px;
+  margin:0 0 24px 0;
+}
+
+/* ---- top nav (base.html) ---- */
+.topbar{
+  background:var(--paper);
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:16px 32px;
+  flex-wrap:wrap;
+  gap:12px;
+}
+
+.brand{
+  font-weight:800;
+  font-size:18px;
+  letter-spacing:-0.01em;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.brand::before{
+  content:"";
+  width:28px;
+  height:28px;
+  border-radius:9px;
+  background:linear-gradient(135deg,#2a6bff,#0d2f9e);
+  display:inline-block;
+  flex:none;
+}
+.brand span{
+  font-weight:600;
+  color:var(--ink-soft);
+  font-size:13px;
+}
+
+.topbar nav{ display:flex; gap:24px; }
+.topbar nav a{
+  font-size:14px;
+  font-weight:600;
+  color:var(--ink-soft);
+}
+.topbar nav a:hover{ color:var(--ink); }
+
+/* ---- main content area ---- */
+.content{
+  max-width:1040px;
+  margin:0 auto;
+  padding:32px 24px 64px;
+}
+
+/* ---- table (data-table used in dashboard.html + review.html) ---- */
+.data-table{
+  width:100%;
+  border-collapse:collapse;
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:0 10px 24px -20px rgba(13,27,62,.3);
+}
+
+.data-table thead th{
+  text-align:left;
+  font-size:11.5px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--ink-soft);
+  font-weight:700;
+  padding:14px 18px;
+  background:var(--card);
+  border-bottom:1px solid var(--line);
+}
+
+.data-table tbody td{
+  padding:14px 18px;
+  font-size:14px;
+  border-bottom:1px solid var(--line);
+  vertical-align:middle;
+}
+
+.data-table tbody tr:last-child td{ border-bottom:none; }
+.data-table tbody tr:hover{ background:#fafbff; }
+
+/* ---- status / risk badges ---- */
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  font-weight:700;
+  padding:5px 11px;
+  border-radius:999px;
+}
+.badge-paid{ background:var(--good-bg); color:var(--good); }
+.badge-overdue{ background:var(--bad-bg); color:var(--bad); }
+.badge-pending{ background:var(--warn-bg); color:var(--warn); }
+
+/* risk tier badges, for use later in draft.html / review.html */
+.risk-low{ background:var(--good-bg); color:var(--good); }
+.risk-medium{ background:var(--warn-bg); color:var(--warn); }
+.risk-high{ background:var(--bad-bg); color:var(--bad); }
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:var(--blue);
+  color:#fff;
+  font-weight:700;
+  font-size:13px;
+  padding:10px 18px;
+  border-radius:999px;
+  border:none;
+  cursor:pointer;
+  box-shadow:0 8px 16px -8px rgba(21,82,240,.6);
+}
+.btn:hover{ background:var(--blue-dark); }
+
+.btn-primary{ background:var(--blue); color:#fff; }
+.btn-small{ padding:7px 14px; font-size:12.5px; box-shadow:none; }
+
+.btn-ghost{
+  background:var(--paper);
+  color:var(--blue-dark);
+  border:1px solid #c9d8fb;
+  box-shadow:none;
+}
+
+/* ---- Orbyte connect badge (optional, drop into any template) ---- */
+.orbyte-connect{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:var(--blue-soft);
+  color:var(--blue-dark);
+  font-size:12.5px;
+  font-weight:700;
+  padding:7px 14px;
+  border-radius:999px;
+  border:1px solid #c9d8fb;
+}
+.orbyte-connect .dot{
+  width:6px; height:6px; border-radius:50%; background:#1fbf6b;
+}
