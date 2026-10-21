@@ -1,48 +1,106 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Overdue Invoices</h1>
-<p class="subtitle">Triggered just now — these invoices are past due and unpaid, highest risk first.</p>
+<header class="page-head slim">
+  <div>
+    <h1>Check Overdue</h1>
+    <p class="lede">Triggered just now. These invoices are past due and unpaid, highest risk first. Open one to get the AI risk check and a drafted reminder.</p>
+  </div>
+</header>
 
 {% if overdue|length == 0 %}
-  <p>No overdue invoices right now. Nothing to chase.</p>
+  <div class="panel"><p class="empty">No overdue invoices right now. Nothing to chase.</p></div>
 {% else %}
-<div class="table-wrap">
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>Customer</th>
-      <th class="num">Amount (RM)</th>
-      <th class="num">Days Overdue</th>
-      <th>Risk Tier</th>
-      <th>Recommended Action</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for inv in overdue %}
-    <tr>
-      <td>
-        {{ inv.customer_name }}<br>
-        <span class="mono">{{ inv.invoice_no }}</span>
-        <br><small>{{ inv.past_late_count }} late payment(s) · chats in {{ languages[inv.preferred_language].label }}</small>
-        {% if inv.status == "Reminded" and inv.last_reminded %}
-          <br><span class="badge badge-reminded">Reminded {{ inv.last_reminded }}</span>
-        {% endif %}
-      </td>
-      <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
-      <td class="num">{{ inv.days_overdue }}</td>
-      <td><span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span></td>
-      <td>{{ inv.risk.recommended_action }}</td>
-      <td class="action">
-        <a class="btn btn-small" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}"
-           onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">
-          {% if inv.status == "Reminded" %}Follow up again{% else %}Generate Reminder{% endif %}
-        </a>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="panel">
+  <div class="toolbar">
+    <div class="tabs" role="tablist" id="risk-tabs">
+      <button type="button" class="tab active" data-risk="all">All ({{ overdue|length }})</button>
+      <button type="button" class="tab" data-risk="high">High ({{ tier_counts.high }})</button>
+      <button type="button" class="tab" data-risk="medium">Medium ({{ tier_counts.medium }})</button>
+      <button type="button" class="tab" data-risk="low">Low ({{ tier_counts.low }})</button>
+    </div>
+    <input type="search" id="search" class="search" placeholder="Search customer or invoice no." aria-label="Search customer or invoice number">
+  </div>
+
+  <div class="table-wrap flat">
+    <table class="data-table" id="overdue-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th class="num">Amount (RM)</th>
+          <th>Due Date</th>
+          <th class="num">Days Overdue</th>
+          <th>Risk</th>
+          <th>Recommended Action</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in overdue %}
+        <tr data-risk="{{ inv.risk.risk_tier }}" data-text="{{ (inv.customer_name ~ ' ' ~ inv.invoice_no)|lower }}">
+          <td>
+            <div class="who">
+              <span class="avatar sm {{ inv.risk.risk_tier }}">{{ inv.customer_name.split()[:2]|map('first')|join('') }}</span>
+              <div>
+                <a href="{{ url_for('customer_detail', customer_id=inv.customer_id) }}"><strong>{{ inv.customer_name }}</strong></a>
+                <small class="mono">{{ inv.invoice_no }}</small>
+                <small>{{ inv.past_late_count }} late payment(s) · chats in {{ languages[inv.preferred_language].label }}</small>
+                {% if inv.status == "Reminded" and inv.last_reminded %}
+                  <span class="badge badge-reminded">Reminded {{ inv.last_reminded }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+          <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
+          <td class="nowrap">{{ inv.due_date }}</td>
+          <td class="num">{{ inv.days_overdue }}</td>
+          <td><span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span></td>
+          <td class="rec">
+            {{ inv.risk.recommended_action }}
+            <small class="why-line">Why: {{ inv.risk.factors|join(' · ') }}</small>
+          </td>
+          <td class="action">
+            <a class="btn btn-small btn-primary" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}"
+               onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">
+              {% if inv.status == "Reminded" %}Follow up again{% else %}Generate Reminder{% endif %}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-foot"><span id="showing">Showing {{ overdue|length }} of {{ overdue|length }} overdue invoices</span></div>
 </div>
+
+<script>
+  // filter by risk tab and search box (all in the browser, over the rows already on the page)
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll("#overdue-table tbody tr"));
+    var tabs = document.querySelectorAll("#risk-tabs .tab");
+    var search = document.getElementById("search");
+    var showing = document.getElementById("showing");
+    var current = "all";
+
+    function apply() {
+      var q = search.value.trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (row) {
+        var ok = (current === "all" || row.dataset.risk === current) && row.dataset.text.indexOf(q) !== -1;
+        row.hidden = !ok;
+        if (ok) shown++;
+      });
+      showing.textContent = "Showing " + shown + " of " + rows.length + " overdue invoices";
+    }
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        current = tab.dataset.risk;
+        tabs.forEach(function (t) { t.classList.toggle("active", t === tab); });
+        apply();
+      });
+    });
+    search.addEventListener("input", apply);
+  })();
+</script>
 {% endif %}
 {% endblock %}
