@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+{% set c = s.customer %}
+<header class="page-head slim">
+  <div>
+    <a class="link back" href="{{ url_for('customers') }}">← Back to customers</a>
+    <div class="cust-title">
+      <span class="avatar lg {{ risk or 'clear' }}">{{ c.name.split()[:2]|map('first')|join('') }}</span>
+      <div>
+        <h1>{{ c.name }}</h1>
+        <p class="lede">{{ c.phone }} · chats in {{ languages[c.preferred_language].label }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="head-right">
+    {% if risk %}
+      <span class="badge badge-lg risk-{{ risk }}">{{ risk|capitalize }} risk</span>
+    {% else %}
+      <span class="badge badge-lg badge-paid">No overdue invoices</span>
+    {% endif %}
+  </div>
+</header>
+
+<!-- summary -->
+<section class="kpi-grid">
+  <article class="kpi-card">
+    <div class="kpi-body">
+      <div class="kpi-label">Outstanding</div>
+      <div class="kpi-value">RM {{ "{:,.2f}".format(s.outstanding) }}</div>
+      <div class="kpi-sub">{{ s.open_invoices|length }} open invoice{{ 's' if s.open_invoices|length != 1 else '' }}</div>
+    </div>
+  </article>
+  <article class="kpi-card">
+    <div class="kpi-body">
+      <div class="kpi-label">Overdue</div>
+      <div class="kpi-value">RM {{ "{:,.2f}".format(s.overdue_amount) }}</div>
+      <div class="kpi-sub">{{ s.overdue_invoices|length }} invoice{{ 's' if s.overdue_invoices|length != 1 else '' }} past due</div>
+    </div>
+  </article>
+  <article class="kpi-card">
+    <div class="kpi-body">
+      <div class="kpi-label">Late payments on record</div>
+      <div class="kpi-value">{{ s.late_count }} <span class="unit">of {{ s.paid_count }} paid</span></div>
+      <div class="kpi-sub">{{ s.on_time_count }} paid on or before the due date</div>
+    </div>
+  </article>
+  <article class="kpi-card">
+    <div class="kpi-body">
+      <div class="kpi-label">Average days late</div>
+      <div class="kpi-value">{% if s.avg_days_late is not none %}{{ s.avg_days_late }} <span class="unit">days</span>{% else %}—{% endif %}</div>
+      <div class="kpi-sub">{% if s.avg_days_late is not none %}across the {{ s.late_count }} late payment{{ 's' if s.late_count != 1 else '' }}{% else %}no late payments to average{% endif %}</div>
+    </div>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <div class="detail-main">
+
+    <!-- open invoices -->
+    <div class="panel">
+      <div class="panel-head"><h2>Open invoices</h2></div>
+      {% if s.open_invoices %}
+      <div class="table-wrap flat">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th class="num">Amount (RM)</th>
+              <th>Due date</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in s.open_invoices %}
+            <tr>
+              <td><span class="mono">{{ inv.invoice_no }}</span></td>
+              <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
+              <td class="nowrap">{{ inv.due_date }}</td>
+              <td>
+                <span class="badge badge-{{ inv.status|lower }}">{{ inv.status }}</span>
+                {% if inv.days_overdue is defined and inv in s.overdue_invoices %}
+                  <small class="inline-note">{{ inv.days_overdue }} days overdue</small>
+                {% else %}
+                  <small class="inline-note">not yet due</small>
+                {% endif %}
+              </td>
+              <td class="action">
+                {% if inv in s.overdue_invoices %}
+                  <a class="btn btn-small btn-primary" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}"
+                     onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">
+                    {% if inv.status == "Reminded" %}Follow up again{% else %}Generate Reminder{% endif %}
+                  </a>
+                {% endif %}
+                <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
+                  <input type="hidden" name="next" value="{{ request.path }}">
+                  <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="empty">No open invoices. Everything issued to this customer has been paid.</p>
+      {% endif %}
+    </div>
+
+    <!-- why this risk -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Why this risk level</h2>
+        <span class="tag">Calculated by rule</span>
+      </div>
+      {% if s.overdue_invoices %}
+        {% for inv in s.overdue_invoices %}
+        <div class="why-card tier-{{ inv.risk.risk_tier }}">
+          <div class="why-top">
+            <span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span>
+            <span class="mono">{{ inv.invoice_no }}</span>
+          </div>
+          <ul class="bullets">
+            {% for f in inv.risk.factors %}<li>{{ f }}</li>{% endfor %}
+          </ul>
+          <p class="rule-text">{{ inv.risk.rule }}</p>
+        </div>
+        {% endfor %}
+        <p class="foot-note">These are fixed rules on the facts above; no score is estimated. The AI adds its own written explanation only when you open a reminder draft, and that is labelled separately.</p>
+      {% else %}
+        <p class="empty">Nothing is overdue, so there is no risk to explain.</p>
+      {% endif %}
+    </div>
+
+    <!-- payment record -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Payment record</h2>
+        <span class="tag">From paid invoices</span>
+      </div>
+      {% if s.records %}
+      <ul class="pay-list">
+        {% for rec in s.records %}
+        {% set late = rec.days_late %}
+        <li>
+          <div class="pay-top">
+            <span class="mono">{{ rec.invoice.invoice_no }}</span>
+            <span class="pay-amount">RM {{ "{:,.2f}".format(rec.invoice.amount) }}</span>
+            <span class="pay-text {{ 'late' if late > 0 else 'ontime' }}">
+              {% if late > 0 %}{{ late }} day{{ 's' if late != 1 else '' }} late
+              {% elif late == 0 %}paid on the due date
+              {% else %}{{ -late }} day{{ 's' if late != -1 else '' }} early{% endif %}
+            </span>
+          </div>
+          <div class="mix-track"><span class="mix-fill {{ 'tier-high' if late > 0 else 'tier-low' }}" style="width: {{ rec.pct if late != 0 else 3 }}%"></span></div>
+          <small>due {{ rec.invoice.due_date }} · paid {{ rec.invoice.paid_date }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="foot-note">Calculated from each paid invoice's due date and paid date (synthetic demo data). Too few payments make a trend meaningless, so none is drawn.</p>
+      {% else %}
+        <p class="empty">No paid invoices yet, so there is no payment record to analyse.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- timeline -->
+  <div class="panel timeline-panel">
+    <div class="panel-head">
+      <h2>Timeline</h2>
+      <span class="tag">Recorded events only</span>
+    </div>
+    {% if timeline %}
+    <ol class="timeline">
+      {% for e in timeline %}
+      <li class="tl-{{ e.kind }}">
+        <span class="tl-dot"></span>
+        <div class="tl-body">
+          <div class="tl-when">{{ e.when.strftime('%d %b %Y') }}{% if e.kind == 'reminder' %} · {{ e.when.strftime('%H:%M') }}{% endif %}</div>
+          <div class="tl-title">{{ e.title }}</div>
+          {% if e.kind == 'reminder' %}
+            <div class="tl-tags">
+              {% if e.risk %}<span class="badge risk-{{ e.risk }}">{{ e.risk|capitalize }}</span>{% endif %}
+              {% if e.language %}<span class="tag">{{ languages[e.language].label }}</span>{% endif %}
+            </div>
+            <p class="tl-detail">{{ e.detail }}</p>
+          {% else %}
+            <div class="tl-note">{{ e.detail }}</div>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="foot-note">Only events the system recorded are shown: approved reminders (simulated sends) and payments marked as paid.</p>
+    {% else %}
+      <p class="empty">Nothing recorded for this customer yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

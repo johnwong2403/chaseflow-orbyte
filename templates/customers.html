@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head slim">
+  <div>
+    <h1>Customers</h1>
+    <p class="lede">Who owes what, how risky each customer is, and when you last followed up. Synthetic demo data.</p>
+  </div>
+</header>
+
+<div class="panel">
+  <div class="toolbar">
+    <div class="tabs" role="tablist" id="risk-tabs">
+      <button type="button" class="tab active" data-risk="all">All ({{ rows|length }})</button>
+      <button type="button" class="tab" data-risk="high">High ({{ counts.high }})</button>
+      <button type="button" class="tab" data-risk="medium">Medium ({{ counts.medium }})</button>
+      <button type="button" class="tab" data-risk="low">Low ({{ counts.low }})</button>
+      <button type="button" class="tab" data-risk="clear">No overdue ({{ counts.clear }})</button>
+    </div>
+    <input type="search" id="search" class="search" placeholder="Search customer name" aria-label="Search customer name">
+  </div>
+
+  <div class="table-wrap flat">
+    <table class="data-table" id="customer-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th class="num">Outstanding (RM)</th>
+          <th class="num">Overdue</th>
+          <th>Risk</th>
+          <th class="num">Late payments</th>
+          <th>Last follow-up</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% set s = row.summary %}
+        <tr data-risk="{{ row.risk or 'clear' }}" data-text="{{ s.customer.name|lower }}">
+          <td>
+            <a class="who" href="{{ url_for('customer_detail', customer_id=s.customer.id) }}">
+              <span class="avatar sm {{ row.risk or 'clear' }}">{{ s.customer.name.split()[:2]|map('first')|join('') }}</span>
+              <div>
+                <strong>{{ s.customer.name }}</strong>
+                <small>{{ s.customer.phone }} · {{ languages[s.customer.preferred_language].label }}</small>
+              </div>
+            </a>
+          </td>
+          <td class="num">{{ "{:,.2f}".format(s.outstanding) }}</td>
+          <td class="num">
+            {% if s.overdue_invoices %}
+              {{ s.overdue_invoices|length }} · RM {{ "{:,.2f}".format(s.overdue_amount) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if row.risk %}
+              <span class="badge risk-{{ row.risk }}">{{ row.risk|capitalize }}</span>
+            {% else %}
+              <span class="badge badge-paid">Clear</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ s.late_count }} of {{ s.paid_count }} paid</td>
+          <td class="nowrap">
+            {% if s.last_followup %}{{ s.last_followup.strftime('%d %b %Y') }}{% else %}<span class="muted-text">None yet</span>{% endif %}
+          </td>
+          <td class="action"><a class="btn btn-small btn-ghost" href="{{ url_for('customer_detail', customer_id=s.customer.id) }}">View →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-foot"><span id="showing">Showing {{ rows|length }} of {{ rows|length }} customers</span></div>
+</div>
+
+<script>
+  // filter by risk tab and search box (all in the browser, over the rows already on the page)
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll("#customer-table tbody tr"));
+    var tabs = document.querySelectorAll("#risk-tabs .tab");
+    var search = document.getElementById("search");
+    var showing = document.getElementById("showing");
+    var current = "all";
+
+    function apply() {
+      var q = search.value.trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (row) {
+        var ok = (current === "all" || row.dataset.risk === current) && row.dataset.text.indexOf(q) !== -1;
+        row.hidden = !ok;
+        if (ok) shown++;
+      });
+      showing.textContent = "Showing " + shown + " of " + rows.length + " customers";
+    }
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        current = tab.dataset.risk;
+        tabs.forEach(function (t) { t.classList.toggle("active", t === tab); });
+        apply();
+      });
+    });
+    search.addEventListener("input", apply);
+  })();
+</script>
+{% endblock %}

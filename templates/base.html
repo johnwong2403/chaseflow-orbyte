@@ -27,6 +27,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           <span>Check Overdue</span>
         </a>
+        <a href="{{ url_for('customers') }}" class="{{ 'active' if ep in ('customers', 'customer_detail') else '' }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18 14.3c2.3.7 3.5 2.6 3.5 5.7"/></svg>
+          <span>Customers</span>
+        </a>
         <a href="{{ url_for('activity_log') }}" class="{{ 'active' if ep == 'activity_log' else '' }}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
           <span>Activity Log</span>

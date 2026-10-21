@@ -77,16 +77,50 @@ _ACTION_FOR_RISK = {
 }
 
 
+_RULE_TEXT = {
+    "low": "Rule: Low = overdue 5 days or fewer AND no earlier late payments.",
+    "medium": "Rule: Medium = not Low, and overdue 14 days or fewer OR at most 1 earlier late payment.",
+    "high": "Rule: High = overdue more than 14 days AND at least 2 earlier late payments.",
+}
+
+
+def explain_risk(days_overdue: int, past_late_count: int) -> dict:
+    """The deterministic part of the risk judgement, spelled out.
+
+    Returns the tier plus the plain facts behind it and the exact rule that
+    produced it. No AI and no invented numbers: this is the same rule as
+    _assess_risk, just explained, so the owner can check it by hand."""
+    tier = _assess_risk(days_overdue, past_late_count)
+
+    if days_overdue <= 5:
+        days_text = f"{days_overdue} day(s) overdue (5 or fewer)"
+    elif days_overdue <= 14:
+        days_text = f"{days_overdue} days overdue (6 to 14)"
+    else:
+        days_text = f"{days_overdue} days overdue (more than 14)"
+
+    if past_late_count == 0:
+        late_text = "No earlier late payments on record"
+    elif past_late_count == 1:
+        late_text = "1 earlier late payment on record"
+    else:
+        late_text = f"{past_late_count} earlier late payments on record"
+
+    return {"risk_tier": tier, "factors": [days_text, late_text], "rule": _RULE_TEXT[tier]}
+
+
 def assess_invoice_risk(invoice: dict) -> dict:
     """Quick rule-based risk for the overdue LIST page.
 
     No AI call here: we don't want one API request per table row just to
     show a list. The AI looks at an invoice only when the owner opens it.
     """
-    risk_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
+    explained = explain_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
     return {
-        "risk_tier": risk_tier,
-        "recommended_action": _ACTION_FOR_RISK[risk_tier],
+        "risk_tier": explained["risk_tier"],
+        "recommended_action": _ACTION_FOR_RISK[explained["risk_tier"]],
+        "factors": explained["factors"],
+        "rule": explained["rule"],
     }
 
 
