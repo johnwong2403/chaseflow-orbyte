@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ChaseFlow for Orbyte</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,7 +19,11 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark"></span>
+        <span class="brand-mark"><svg viewBox="0 0 34 34" width="34" height="34" aria-hidden="true">
+          <circle cx="9" cy="23.5" r="2.6" fill="none" stroke="#ffffff" stroke-opacity=".9" stroke-width="1.8"/>
+          <path d="M12.2 22.2 C 16 20.5, 16.5 14, 21 13 S 24.6 11.2, 25.2 10.4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M20.6 9.6 L26 9.4 L25.4 14.8" fill="none" stroke="#27d8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg></span>
         <span class="brand-text">ChaseFlow<small>for Orbyte</small></span>
         <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch between dark and light mode" title="Switch dark / light mode">
           <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>

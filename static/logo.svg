@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 34" width="34" height="34" role="img" aria-label="Logo">
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2fa0ff"/>
+      <stop offset=".55" stop-color="#2f4cff"/>
+      <stop offset="1" stop-color="#1a2fa8"/>
+    </linearGradient>
+  </defs>
+  <rect width="34" height="34" rx="10" fill="url(#lg)"/>
+  <!-- money flowing back: a curve that rises from a coin to an arrow -->
+  <circle cx="9" cy="23.5" r="2.6" fill="none" stroke="#ffffff" stroke-opacity=".9" stroke-width="1.8"/>
+  <path d="M12.2 22.2 C 16 20.5, 16.5 14, 21 13 S 24.6 11.2, 25.2 10.4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M20.6 9.6 L26 9.4 L25.4 14.8" fill="none" stroke="#27d8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
