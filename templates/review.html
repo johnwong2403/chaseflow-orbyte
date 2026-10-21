@@ -100,6 +100,12 @@
       });
     });
     search.addEventListener("input", apply);
+
+    // arrive pre-filtered when linked from the dashboard (e.g. ?risk=high)
+    var wanted = new URLSearchParams(window.location.search).get("risk");
+    if (wanted) {
+      tabs.forEach(function (t) { if (t.dataset.risk === wanted) t.click(); });
+    }
   })();
 </script>
 {% endif %}

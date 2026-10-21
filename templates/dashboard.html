@@ -30,7 +30,8 @@
 
 <!-- KPI row -->
 <section class="kpi-grid">
-  <article class="kpi-card">
+  <a class="kpi-card" href="{{ url_for('check_overdue') }}" title="See the overdue invoices">
+    <span class="kpi-go" aria-hidden="true">→</span>
     <div class="kpi-icon blue">
       <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
     </div>
@@ -42,9 +43,10 @@
         {% for b in ageing %}<span class="seg sev-{{ loop.index0 }}" style="flex: {{ b.amount }}" title="{{ b.label }}: RM {{ '{:,.2f}'.format(b.amount) }}"></span>{% endfor %}
       </div>
     </div>
-  </article>
+  </a>
 
-  <article class="kpi-card">
+  <a class="kpi-card" href="{{ url_for('customers', risk='high') }}" title="See the high-risk customers">
+    <span class="kpi-go" aria-hidden="true">→</span>
     <div class="kpi-icon red">
       <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>
     </div>
@@ -56,9 +58,10 @@
         {% for r in risk_mix %}<span class="seg tier-{{ r.tier }}" style="flex: {{ r.count }}" title="{{ r.tier|capitalize }}: {{ r.count }}"></span>{% endfor %}
       </div>
     </div>
-  </article>
+  </a>
 
-  <article class="kpi-card">
+  <a class="kpi-card" href="{{ url_for('check_overdue') }}" title="See the overdue invoices">
+    <span class="kpi-go" aria-hidden="true">→</span>
     <div class="kpi-icon cyan">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
     </div>
@@ -75,9 +78,10 @@
         </span>
       {% endfor %}
     </div>
-  </article>
+  </a>
 
-  <article class="kpi-card">
+  <a class="kpi-card" href="{{ url_for('activity_log') }}" title="Open the activity log">
+    <span class="kpi-go" aria-hidden="true">→</span>
     <div class="kpi-icon green">
       <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
     </div>
@@ -94,7 +98,7 @@
         </span>
       {% endfor %}
     </div>
-  </article>
+  </a>
 </section>
 
 <!-- main grid -->
@@ -196,13 +200,13 @@
     <div class="panel riskmix">
       <div class="panel-head"><h2>Risk Distribution</h2></div>
       {% for r in risk_mix %}
-      <div class="mix-row">
+      <a class="mix-row" href="{{ url_for('check_overdue', risk=r.tier) }}" title="See {{ r.tier }}-risk invoices">
         <div class="mix-top">
           <span class="badge risk-{{ r.tier }}">{{ r.tier|capitalize }}</span>
           <span class="mix-count">{{ r.count }} invoice{{ 's' if r.count != 1 else '' }} · RM {{ "{:,.2f}".format(r.amount) }}</span>
         </div>
         <div class="mix-track"><span class="mix-fill tier-{{ r.tier }}" style="width: {{ r.pct }}%"></span></div>
-      </div>
+      </a>
       {% endfor %}
       <p class="foot-note">Share of overdue RM by risk tier, using the rule-based baseline.</p>
     </div>
@@ -301,6 +305,21 @@
           t.classList.toggle("active", t === tab);
           document.getElementById(t.dataset.target).hidden = (t !== tab);
         });
+      });
+    });
+  })();
+</script>
+
+<script>
+  // KPI cards: hovering a small bar or segment shows its numbers in the card's subtitle line
+  (function () {
+    document.querySelectorAll(".kpi-card").forEach(function (card) {
+      var sub = card.querySelector(".kpi-sub");
+      if (!sub) return;
+      var idle = sub.textContent;
+      card.querySelectorAll(".seg, .minibar-col").forEach(function (el) {
+        el.addEventListener("mouseenter", function () { sub.textContent = el.getAttribute("title"); sub.classList.add("on"); });
+        el.addEventListener("mouseleave", function () { sub.textContent = idle; sub.classList.remove("on"); });
       });
     });
   })();

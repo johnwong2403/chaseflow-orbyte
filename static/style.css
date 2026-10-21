@@ -595,3 +595,25 @@ a.who:hover strong{ color:var(--cyan); }
 
 /* the WhatsApp preview is always dark, in both themes */
 .wa{ color:#e9edef; }
+
+
+/* ---------- interactive KPI cards ---------- */
+a.kpi-card{ color:inherit; cursor:pointer; transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+a.kpi-card:hover, a.kpi-card:focus-visible{
+  transform:translateY(-3px); border-color:var(--line-strong); outline:none;
+  box-shadow:0 0 26px -6px rgba(47,123,255,.6);
+}
+.kpi-go{
+  position:absolute; top:12px; right:14px; font-size:15px; color:var(--dim);
+  opacity:0; transform:translateX(-4px); transition:opacity .18s ease, transform .18s ease;
+}
+a.kpi-card:hover .kpi-go, a.kpi-card:focus-visible .kpi-go{ opacity:1; transform:none; color:var(--accent-text); }
+.kpi-sub.on{ color:var(--text); font-weight:600; }
+.stackbar .seg, .minibar-col{ transition:filter .15s ease, opacity .15s ease; }
+.stackbar .seg:hover{ filter:brightness(1.35); }
+.stackbar:hover .seg:not(:hover){ opacity:.45; }
+.minibars:hover .minibar-col:not(:hover){ opacity:.45; }
+.minibar-col:hover .minibar{ filter:brightness(1.35); }
+a.mix-row{ display:block; padding:8px 10px; margin:0 -10px; border-radius:10px; transition:background .15s ease; }
+a.mix-row:hover{ background:var(--raised); }
+:root[data-theme="light"] a.kpi-card:hover, :root[data-theme="light"] a.kpi-card:focus-visible{ box-shadow:0 10px 24px -12px rgba(37,99,235,.45); }
