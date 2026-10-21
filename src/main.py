@@ -127,4 +127,7 @@ def activity_log():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Debug mode (auto-reload + in-browser debugger) is only for local editing.
+    # On a published Replit deployment REPLIT_DEPLOYMENT is set, so it stays off.
+    is_deployed = bool(os.environ.get("REPLIT_DEPLOYMENT"))
+    app.run(host="0.0.0.0", port=port, debug=not is_deployed)v
