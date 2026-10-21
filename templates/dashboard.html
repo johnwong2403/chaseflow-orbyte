@@ -1,5 +1,42 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="hero">
+  <div class="eyebrow">Collections Risk Advisor</div>
+  <h1>Know who to chase, and how firmly.</h1>
+  <p class="lede">ChaseFlow scans your invoices, scores each overdue customer's risk, and drafts the right-tone reminder — you approve before anything goes out.</p>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="label">Total Overdue</div>
+      <div class="value bad">RM {{ "%.2f"|format(total_overdue) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">High-Risk Customers</div>
+      <div class="value bad">{{ high_risk_count }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Avg. Days Overdue</div>
+      <div class="value">{{ avg_days_overdue }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Reminders Sent (7d)</div>
+      <div class="value good">{{ reminders_7d }}</div>
+    </div>
+  </div>
+</section>
+
+<div class="connect-card">
+  <div class="connect-icon">O</div>
+  <div class="connect-text">
+    <strong>Pulling live context from Orbyte</strong>
+    <span>Customer records from People · invoice &amp; payment history from Connect</span>
+  </div>
+  <div class="module-tags">
+    <span class="module-tag">People</span>
+    <span class="module-tag">Connect</span>
+  </div>
+</div>
+
 <h1>Invoices</h1>
 <p class="subtitle">All invoices issued by this SME. Synthetic demo data only.</p>
 
@@ -28,5 +65,6 @@
   </tbody>
 </table>
 
+<br>
 <a class="btn btn-primary" href="{{ url_for('check_overdue') }}">Check Overdue Invoices</a>
 {% endblock %}

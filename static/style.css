@@ -5,6 +5,7 @@
   --paper:#ffffff;
   --card:#f5f7fc;
   --navy:#0d1b3e;
+  --navy-2:#131f45;
   --ink:#101a33;
   --ink-soft:#56607e;
   --line:#dde2f0;
@@ -79,6 +80,7 @@ a{ color:inherit; text-decoration:none; }
   font-size:13px;
 }
 
+.topbar-right{ display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
 .topbar nav{ display:flex; gap:24px; }
 .topbar nav a{
   font-size:14px;
@@ -89,10 +91,72 @@ a{ color:inherit; text-decoration:none; }
 
 /* ---- main content area ---- */
 .content{
-  max-width:1040px;
+  max-width:1080px;
   margin:0 auto;
   padding:32px 24px 64px;
 }
+
+/* ---- dark hero / KPI section ---- */
+.hero{
+  background:radial-gradient(circle at 15% 0%, #1c3a8f 0%, var(--navy) 46%, var(--navy-2) 100%);
+  color:#fff;
+  margin:-32px -24px 32px -24px;
+  padding:40px 24px 36px;
+}
+.eyebrow{
+  color:#9db4ff;font-weight:700;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.hero h1{ font-size:28px; color:#fff; }
+.hero p.lede{ color:#aeb9dd; font-size:15px; margin-top:8px; max-width:560px; line-height:1.55; }
+
+.kpi-row{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:26px;
+}
+@media (max-width:720px){ .kpi-row{ grid-template-columns:repeat(2,1fr); } }
+.kpi{
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:16px; padding:18px 18px 16px;
+}
+.kpi .label{ font-size:12.5px; color:#9fb0da; font-weight:600; }
+.kpi .value{ font-size:26px; font-weight:800; margin-top:6px; letter-spacing:-0.01em; }
+.kpi .value.good{ color:#7adda0; }
+.kpi .value.bad{ color:#ff9b9b; }
+
+/* ---- orbyte connect strip ---- */
+.connect-card{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 14px 30px -18px rgba(13,27,62,.25);
+  padding:16px 22px;
+  display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  margin-bottom:32px;
+}
+.connect-icon{
+  width:36px; height:36px; border-radius:10px; flex:none;
+  background:linear-gradient(135deg,#2a6bff,#0d2f9e);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:800; font-size:14px;
+}
+.connect-text strong{ display:block; font-size:14px; }
+.connect-text span{ font-size:13px; color:var(--ink-soft); }
+.module-tags{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+.module-tag{
+  font-size:12px; font-weight:700; color:var(--blue-dark);
+  background:var(--blue-soft); border:1px solid #c9d8fb;
+  padding:5px 10px; border-radius:999px;
+}
+
+.pill-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--blue-soft); color:var(--blue-dark);
+  font-size:12.5px; font-weight:700;
+  padding:7px 14px; border-radius:999px;
+  border:1px solid #c9d8fb;
+}
+.pill-badge .dot{ width:6px; height:6px; border-radius:50%; background:#1fbf6b; }
 
 /* ---- table (data-table used in dashboard.html + review.html) ---- */
 .data-table{
@@ -142,7 +206,6 @@ a{ color:inherit; text-decoration:none; }
 .badge-pending{ background:var(--warn-bg); color:var(--warn); }
 .badge-unpaid{ background:var(--blue-soft); color:var(--blue-dark); }
 
-/* risk tier badges, for use later in draft.html / review.html */
 .risk-low{ background:var(--good-bg); color:var(--good); }
 .risk-medium{ background:var(--warn-bg); color:var(--warn); }
 .risk-high{ background:var(--bad-bg); color:var(--bad); }
@@ -172,21 +235,4 @@ a{ color:inherit; text-decoration:none; }
   color:var(--blue-dark);
   border:1px solid #c9d8fb;
   box-shadow:none;
-}
-
-/* ---- Orbyte connect badge (optional, drop into any template) ---- */
-.orbyte-connect{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  background:var(--blue-soft);
-  color:var(--blue-dark);
-  font-size:12.5px;
-  font-weight:700;
-  padding:7px 14px;
-  border-radius:999px;
-  border:1px solid #c9d8fb;
-}
-.orbyte-connect .dot{
-  width:6px; height:6px; border-radius:50%; background:#1fbf6b;
 }

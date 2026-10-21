@@ -13,6 +13,7 @@ Automation journey (required by Domain 2):
 
 import os
 import sys
+from datetime import datetime, timedelta
 
 # allow "from data import ..." style imports when run directly
 sys.path.insert(0, os.path.dirname(__file__))
@@ -35,8 +36,32 @@ app = Flask(
 
 @app.route("/")
 def dashboard():
-    """Shows every invoice and its status — the starting point of the journey."""
-    return render_template("dashboard.html", invoices=INVOICES)
+    """Shows every invoice plus live KPI stats — the measurable business
+    benefit the PRD asks for, computed fresh from the current data."""
+    overdue = mark_overdue_invoices()
+
+    total_overdue = sum(inv["amount"] for inv in overdue)
+    high_risk_count = sum(
+        1 for inv in overdue if assess_invoice_risk(inv)["risk_tier"] == "high"
+    )
+    avg_days_overdue = (
+        round(sum(inv["days_overdue"] for inv in overdue) / len(overdue), 1)
+        if overdue else 0
+    )
+    cutoff = datetime.now() - timedelta(days=7)
+    reminders_7d = sum(
+        1 for log in ACTIVITY_LOG
+        if datetime.strptime(log["timestamp"], "%Y-%m-%d %H:%M:%S") >= cutoff
+    )
+
+    return render_template(
+        "dashboard.html",
+        invoices=INVOICES,
+        total_overdue=total_overdue,
+        high_risk_count=high_risk_count,
+        avg_days_overdue=avg_days_overdue,
+        reminders_7d=reminders_7d,
+    )
 
 
 @app.route("/check-overdue")
@@ -46,7 +71,6 @@ def check_overdue():
     overdue = mark_overdue_invoices()
     for inv in overdue:
         inv["risk"] = assess_invoice_risk(inv)
-    # highest risk first, so the most urgent customer is always at the top
     risk_order = {"high": 0, "medium": 1, "low": 2}
     overdue.sort(key=lambda inv: risk_order[inv["risk"]["risk_tier"]])
     return render_template("review.html", overdue=overdue)
