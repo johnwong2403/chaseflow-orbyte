@@ -8,105 +8,133 @@ Why in-memory instead of a real database for the prototype:
   or customer data is used anywhere in this project. Phone numbers are fake.
 
 If this were a production Orbyte module, this file is exactly where a real
-database (e.g. SQLite/Postgres via SQLAlchemy) would replace the Python list.
-In Orbyte terms: customer details (phone, preferred language) would come from
-the People module, and invoices + payment history from the Connect module.
+database (e.g. SQLite/Postgres via SQLAlchemy) would replace the Python lists.
+In Orbyte terms: customers (name, phone, preferred language) would come from
+the People module, and invoices + payments from the Connect module.
+
+Single source of truth
+----------------------
+  CUSTOMERS  holds each customer once (name, phone, preferred language).
+  INVOICES   refers to a customer by customer_id, and holds the money facts
+             (amount, due date, status, paid date).
+  The customer's "late payments on record" is NOT typed in by hand: it is
+  counted from that customer's paid invoices (paid after the due date), so it
+  always agrees with the payment records shown on the Customer page.
+  The convenience fields on each invoice (customer_name, phone,
+  preferred_language, past_late_count) are filled in from those two sources
+  by _sync_customer_fields(); never edit them directly.
 
 Invoice status lifecycle:
     Unpaid  --(owner approves a reminder)-->  Reminded  --(payment received)-->  Paid
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
-# --- Synthetic seed data -----------------------------------------------
-# Represents invoices an SME has issued to its customers.
-#   past_late_count    simulates that customer's payment history with this SME
-#   preferred_language the language this customer usually does business in
-#                      ("en" English, "ms" Bahasa Malaysia, "zh" Chinese)
-#   last_reminded      None until the owner approves a reminder for the invoice
+TODAY = date.today()
+
+
+def _days(n):
+    """A date n days from today (negative = in the past)."""
+    return TODAY + timedelta(days=n)
+
+
+# --- Synthetic customers ------------------------------------------------
+# preferred_language: the language this customer usually does business in
+# ("en" English, "ms" Bahasa Malaysia, "zh" Chinese).
+
+CUSTOMERS = [
+    {"id": 1, "name": "Aiman Hardware Supplies", "phone": "+60 12-345 0101", "preferred_language": "ms"},
+    {"id": 2, "name": "Mei Ling Bakery", "phone": "+60 16-789 0202", "preferred_language": "zh"},
+    {"id": 3, "name": "Thiru Auto Parts", "phone": "+60 11-2345 0303", "preferred_language": "en"},
+    {"id": 4, "name": "Siti's Boutique", "phone": "+60 13-456 0404", "preferred_language": "ms"},
+    {"id": 5, "name": "Chong Electrical Services", "phone": "+60 17-890 0505", "preferred_language": "zh"},
+    {"id": 6, "name": "Farah Catering Co.", "phone": "+60 18-234 0606", "preferred_language": "en"},
+]
+CUSTOMERS_BY_ID = {c["id"]: c for c in CUSTOMERS}
+
+
+def _invoice(id, invoice_no, customer_id, amount, due, status="Unpaid", paid=None, reminded=None):
+    return {
+        "id": id,
+        "invoice_no": invoice_no,
+        "customer_id": customer_id,
+        "amount": amount,
+        "due_date": _days(due),
+        "status": status,
+        "paid_date": _days(paid) if paid is not None else None,
+        "last_reminded": _days(reminded) if reminded is not None else None,
+    }
+
+
+# --- Synthetic invoices -------------------------------------------------
+# Open invoices first (ids 1-5), then Farah's paid one (6), then older PAID
+# invoices (7-15) that make up each customer's payment history.
 
 INVOICES = [
-    {
-        "id": 1,
-        "invoice_no": "INV-2026-0038",
-        "customer_name": "Aiman Hardware Supplies",
-        "phone": "+60 12-345 0101",
-        "preferred_language": "ms",
-        "amount": 1250.00,
-        "due_date": date.today() - timedelta(days=3),
-        "status": "Unpaid",
-        "past_late_count": 0,
-        "last_reminded": None,
-    },
-    {
-        "id": 2,
-        "invoice_no": "INV-2026-0031",
-        "customer_name": "Mei Ling Bakery",
-        "phone": "+60 16-789 0202",
-        "preferred_language": "zh",
-        "amount": 480.50,
-        "due_date": date.today() - timedelta(days=14),
-        "status": "Unpaid",
-        "past_late_count": 2,
-        "last_reminded": None,
-    },
-    {
-        "id": 3,
-        "invoice_no": "INV-2026-0044",
-        "customer_name": "Thiru Auto Parts",
-        "phone": "+60 11-2345 0303",
-        "preferred_language": "en",
-        "amount": 2100.00,
-        "due_date": date.today() + timedelta(days=5),
-        "status": "Unpaid",
-        "past_late_count": 0,
-        "last_reminded": None,
-    },
-    {
-        "id": 4,
-        "invoice_no": "INV-2026-0040",
-        "customer_name": "Siti's Boutique",
-        "phone": "+60 13-456 0404",
-        "preferred_language": "ms",
-        "amount": 320.00,
-        "due_date": date.today() - timedelta(days=1),
-        "status": "Unpaid",
-        "past_late_count": 1,
-        "last_reminded": None,
-    },
-    {
-        "id": 5,
-        "invoice_no": "INV-2026-0027",
-        "customer_name": "Chong Electrical Services",
-        "phone": "+60 17-890 0505",
-        "preferred_language": "zh",
-        "amount": 875.00,
-        "due_date": date.today() - timedelta(days=21),
-        "status": "Unpaid",
-        "past_late_count": 3,
-        "last_reminded": None,
-    },
-    {
-        "id": 6,
-        "invoice_no": "INV-2026-0035",
-        "customer_name": "Farah Catering Co.",
-        "phone": "+60 18-234 0606",
-        "preferred_language": "en",
-        "amount": 640.00,
-        "due_date": date.today() - timedelta(days=5),
-        "status": "Paid",
-        "past_late_count": 0,
-        "last_reminded": date.today() - timedelta(days=4),
-    },
+    _invoice(1, "INV-2026-0038", 1, 1250.00, due=-3),
+    _invoice(2, "INV-2026-0031", 2, 480.50, due=-14),
+    _invoice(3, "INV-2026-0044", 3, 2100.00, due=5),
+    _invoice(4, "INV-2026-0040", 4, 320.00, due=-1),
+    _invoice(5, "INV-2026-0027", 5, 875.00, due=-21),
+    _invoice(6, "INV-2026-0035", 6, 640.00, due=-5, status="Paid", paid=-3, reminded=-4),
+    # payment history (all paid)
+    _invoice(7, "INV-2026-0012", 5, 640.00, due=-120, status="Paid", paid=-105),
+    _invoice(8, "INV-2026-0018", 5, 910.00, due=-90, status="Paid", paid=-70),
+    _invoice(9, "INV-2026-0022", 5, 450.00, due=-60, status="Paid", paid=-48),
+    _invoice(10, "INV-2026-0014", 2, 380.00, due=-100, status="Paid", paid=-88),
+    _invoice(11, "INV-2026-0021", 2, 520.00, due=-62, status="Paid", paid=-53),
+    _invoice(12, "INV-2026-0019", 4, 275.00, due=-75, status="Paid", paid=-70),
+    _invoice(13, "INV-2026-0016", 1, 1100.00, due=-80, status="Paid", paid=-82),
+    _invoice(14, "INV-2026-0017", 3, 1950.00, due=-70, status="Paid", paid=-73),
+    _invoice(15, "INV-2026-0010", 6, 580.00, due=-45, status="Paid", paid=-47),
 ]
+
+
+def late_payment_count(customer_id):
+    """Earlier late payments = this customer's PAID invoices paid after the due date."""
+    return sum(
+        1 for inv in INVOICES
+        if inv["customer_id"] == customer_id
+        and inv["status"] == "Paid"
+        and inv["paid_date"] is not None
+        and inv["paid_date"] > inv["due_date"]
+    )
+
+
+def _sync_customer_fields():
+    """Fill each invoice's convenience fields from CUSTOMERS and the payment records."""
+    for inv in INVOICES:
+        customer = CUSTOMERS_BY_ID[inv["customer_id"]]
+        inv["customer_name"] = customer["name"]
+        inv["phone"] = customer["phone"]
+        inv["preferred_language"] = customer["preferred_language"]
+        inv["past_late_count"] = late_payment_count(inv["customer_id"])
+
+
+_sync_customer_fields()
+
+
+# --- Activity log -------------------------------------------------------
+
+def get_invoice_by_id(invoice_id):
+    for inv in INVOICES:
+        if inv["id"] == invoice_id:
+            return inv
+    return None
+
+
+def get_customer(customer_id):
+    return CUSTOMERS_BY_ID.get(customer_id)
 
 
 def _seed_entry(days_ago, hour, invoice_id, invoice_no, customer_name, message, risk_tier, language):
     when = datetime.now().replace(hour=hour, minute=15, second=0, microsecond=0) - timedelta(days=days_ago)
+    invoice = get_invoice_by_id(invoice_id) if invoice_id else None
     return {
         "timestamp": when.strftime("%Y-%m-%d %H:%M:%S"),
         "invoice_id": invoice_id,
         "invoice_no": invoice_no,
+        "customer_id": invoice["customer_id"] if invoice else None,
         "customer_name": customer_name,
         "message_sent": message,
         "risk_tier": risk_tier,
@@ -119,6 +147,8 @@ def _seed_entry(days_ago, hour, invoice_id, invoice_no, customer_name, message, 
 #
 # Starts with a few SYNTHETIC past entries so the dashboard KPIs and the
 # Activity Log are not empty on first load (this is demo history, not real data).
+# The last two are for customers that are not in this SME's customer list, so
+# they have no customer_id and do not appear on any Customer page.
 ACTIVITY_LOG = [
     _seed_entry(
         4, 10, 6, "INV-2026-0035", "Farah Catering Co.",
@@ -143,13 +173,6 @@ ACTIVITY_LOG = [
 ]
 
 
-def get_invoice_by_id(invoice_id):
-    for inv in INVOICES:
-        if inv["id"] == invoice_id:
-            return inv
-    return None
-
-
 def mark_overdue_invoices():
     """
     TRIGGER step of the automation journey.
@@ -162,6 +185,7 @@ def mark_overdue_invoices():
     For the live demo we trigger it manually via a button, so judges can see
     the exact moment the automation fires.
     """
+    _sync_customer_fields()
     overdue = []
     today = date.today()
     for inv in INVOICES:
@@ -209,6 +233,7 @@ def log_activity(invoice_id, customer_name, message_sent, risk_tier="", language
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "invoice_id": invoice_id,
         "invoice_no": invoice["invoice_no"] if invoice else "",
+        "customer_id": invoice["customer_id"] if invoice else None,
         "customer_name": customer_name,
         "message_sent": message_sent,
         "risk_tier": risk_tier,
@@ -224,9 +249,114 @@ def log_activity(invoice_id, customer_name, message_sent, risk_tier="", language
 
 
 def mark_paid(invoice_id):
-    """Closes the loop: the customer paid, so the invoice leaves the overdue list."""
+    """Closes the loop: the customer paid, so the invoice leaves the overdue list.
+
+    The payment date is recorded, so if it is after the due date this counts
+    as a late payment on the customer's record from now on."""
     invoice = get_invoice_by_id(invoice_id)
     if invoice is None:
         return False
-    invoice["status"] = "Paid"
+    if invoice["status"] != "Paid":
+        invoice["status"] = "Paid"
+        invoice["paid_date"] = date.today()
+    _sync_customer_fields()
     return True
+
+
+# --- Customer views -----------------------------------------------------
+# Everything below is computed from CUSTOMERS, INVOICES and ACTIVITY_LOG.
+# Nothing is stored twice and no history is invented.
+
+def is_overdue(invoice):
+    return invoice["status"] in ("Unpaid", "Reminded") and invoice["due_date"] < date.today()
+
+
+def _log_time(entry):
+    return datetime.strptime(entry["timestamp"], "%Y-%m-%d %H:%M:%S")
+
+
+def customer_invoices(customer_id):
+    return [inv for inv in INVOICES if inv["customer_id"] == customer_id]
+
+
+def payment_records(customer_id):
+    """Paid invoices with how many days after (positive) or before (negative) the due date they were paid."""
+    records = []
+    for inv in customer_invoices(customer_id):
+        if inv["status"] == "Paid" and inv["paid_date"] is not None:
+            records.append({
+                "invoice": inv,
+                "days_late": (inv["paid_date"] - inv["due_date"]).days,
+            })
+    records.sort(key=lambda r: r["invoice"]["paid_date"], reverse=True)
+    return records
+
+
+def customer_summary(customer_id):
+    """Money, overdue and payment-record facts for one customer."""
+    customer = get_customer(customer_id)
+    if customer is None:
+        return None
+    _sync_customer_fields()
+    today = date.today()
+
+    invoices = customer_invoices(customer_id)
+    open_invoices = [i for i in invoices if i["status"] in ("Unpaid", "Reminded")]
+    overdue = [i for i in open_invoices if i["due_date"] < today]
+    for inv in overdue:
+        inv["days_overdue"] = (today - inv["due_date"]).days
+
+    records = payment_records(customer_id)
+    late_days = [r["days_late"] for r in records if r["days_late"] > 0]
+    entries = [e for e in ACTIVITY_LOG if e.get("customer_id") == customer_id]
+    last_followup = max((_log_time(e) for e in entries), default=None)
+
+    return {
+        "customer": customer,
+        "open_invoices": sorted(open_invoices, key=lambda i: i["due_date"]),
+        "overdue_invoices": overdue,
+        "outstanding": sum(i["amount"] for i in open_invoices),
+        "overdue_amount": sum(i["amount"] for i in overdue),
+        "paid_count": len(records),
+        "late_count": len(late_days),
+        "on_time_count": len(records) - len(late_days),
+        "avg_days_late": round(sum(late_days) / len(late_days), 1) if late_days else None,
+        "records": records,
+        "last_followup": last_followup,
+        "reminder_count": len(entries),
+    }
+
+
+def customer_timeline(customer_id):
+    """Events the system has actually recorded for this customer, newest first:
+    reminders a human approved (Activity Log) and invoices marked paid (payment records)."""
+    events = []
+    for entry in ACTIVITY_LOG:
+        if entry.get("customer_id") == customer_id:
+            events.append({
+                "when": _log_time(entry),
+                "kind": "reminder",
+                "title": f"Reminder approved for {entry['invoice_no']}",
+                "detail": entry["message_sent"],
+                "risk": entry["risk_tier"],
+                "language": entry["language"],
+            })
+    for rec in payment_records(customer_id):
+        inv = rec["invoice"]
+        late = rec["days_late"]
+        if late > 0:
+            note = f"Paid {late} day{'s' if late != 1 else ''} after the due date"
+        elif late == 0:
+            note = "Paid on the due date"
+        else:
+            note = f"Paid {-late} day{'s' if -late != 1 else ''} before the due date"
+        events.append({
+            "when": datetime.combine(inv["paid_date"], time(12, 0)),
+            "kind": "paid",
+            "title": f"{inv['invoice_no']} paid · RM {inv['amount']:,.2f}",
+            "detail": note,
+            "risk": "",
+            "language": "",
+        })
+    events.sort(key=lambda e: e["when"], reverse=True)
+    return events

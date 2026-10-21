@@ -1,110 +1,269 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="hero">
-  <div class="eyebrow">Collections · {{ today }}</div>
-  {% if overdue_count == 0 %}
-    <h1>Nothing overdue today.</h1>
-    <p class="lede">Every issued invoice is either paid or still within its due date.</p>
-  {% else %}
-    <h1>RM {{ "{:,.2f}".format(total_overdue) }} is waiting to be collected.</h1>
-    <p class="lede">
-      {{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 else '' }}, {{ high_risk_count }} high risk.
-      ChaseFlow drafts each follow-up in the customer's own language — nothing goes out until you approve it.
-    </p>
-  {% endif %}
 
-  <div class="kpi-row">
-    <div class="kpi">
-      <div class="label">Total Overdue</div>
-      <div class="value bad">RM {{ "{:,.2f}".format(total_overdue) }}</div>
-    </div>
-    <div class="kpi">
-      <div class="label">High-Risk Customers</div>
-      <div class="value bad">{{ high_risk_count }}</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Avg. Days Overdue</div>
-      <div class="value">{{ avg_days_overdue }}</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Reminders Sent (7d)</div>
-      <div class="value good">{{ reminders_7d }}</div>
-    </div>
+{% macro bars(c, label) %}
+<svg viewBox="0 0 {{ c.width }} {{ c.height }}" class="bar-svg" role="img" aria-label="{{ label }}">
+  {% for t in c.ticks %}
+    <line class="grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/>
+    <text class="axis" x="{{ c.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>
+  {% endfor %}
+  {% for b in c.bars %}
+    <rect class="bar {{ b.cls }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="4"><title>{{ b.tip }}</title></rect>
+    <text class="val" x="{{ b.cx }}" y="{{ b.y - 8 }}" text-anchor="middle">{{ b.value_label }}</text>
+    <text class="cat" x="{{ b.cx }}" y="{{ c.base + 20 }}" text-anchor="middle">{{ b.label }}</text>
+    <text class="sub" x="{{ b.cx }}" y="{{ c.base + 36 }}" text-anchor="middle">{{ b.sub }}</text>
+  {% endfor %}
+</svg>
+{% endmacro %}
+
+<header class="page-head">
+  <div>
+    <h1>Turn overdue invoices into <span class="accent">cash.</span></h1>
+    <p class="lede">AI-assisted collections for Malaysian SMEs, built as a module for the Orbyte ecosystem.</p>
   </div>
+  <div class="head-right">
+    <span class="date-chip">{{ today }}</span>
+    <a class="btn btn-primary" href="{{ url_for('check_overdue') }}">Check overdue invoices</a>
+  </div>
+</header>
+
+<!-- KPI row -->
+<section class="kpi-grid">
+  <article class="kpi-card">
+    <div class="kpi-icon blue">
+      <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-label">Total Overdue</div>
+      <div class="kpi-value">RM {{ "{:,.2f}".format(total_overdue) }}</div>
+      <div class="kpi-sub">{{ overdue_count }} invoice{{ 's' if overdue_count != 1 else '' }} past due</div>
+      <div class="stackbar" aria-label="Overdue amount by age">
+        {% for b in ageing %}<span class="seg sev-{{ loop.index0 }}" style="flex: {{ b.amount }}" title="{{ b.label }}: RM {{ '{:,.2f}'.format(b.amount) }}"></span>{% endfor %}
+      </div>
+    </div>
+  </article>
+
+  <article class="kpi-card">
+    <div class="kpi-icon red">
+      <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-label">High-Risk Customers</div>
+      <div class="kpi-value">{{ high_risk_count }}</div>
+      <div class="kpi-sub">{% if high_risk_count %}need immediate attention{% else %}none right now{% endif %}</div>
+      <div class="stackbar" aria-label="Overdue invoices by risk tier">
+        {% for r in risk_mix %}<span class="seg tier-{{ r.tier }}" style="flex: {{ r.count }}" title="{{ r.tier|capitalize }}: {{ r.count }}"></span>{% endfor %}
+      </div>
+    </div>
+  </article>
+
+  <article class="kpi-card">
+    <div class="kpi-icon cyan">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-label">Average Days Overdue</div>
+      <div class="kpi-value">{{ avg_days_overdue }} <span class="unit">days</span></div>
+      <div class="kpi-sub">across {{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 else '' }}</div>
+    </div>
+    <div class="minibars" aria-label="Days overdue per invoice">
+      {% for d in days_series %}
+        <span class="minibar-col" title="{{ d.name }}: {{ d.days }} days">
+          <span class="minibar cyan" style="height: {{ d.pct if d.days else 6 }}%"></span>
+          <em>{{ d.label }}</em>
+        </span>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="kpi-card">
+    <div class="kpi-icon green">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-label">Reminders Sent (7d)</div>
+      <div class="kpi-value">{{ reminders_7d }}</div>
+      <div class="kpi-sub">approved by the owner · simulated</div>
+    </div>
+    <div class="minibars" aria-label="Reminders per day, last 7 days">
+      {% for s in reminder_series %}
+        <span class="minibar-col" title="{{ s.label }}: {{ s.count }}">
+          <span class="minibar" style="height: {{ s.pct if s.count else 6 }}%" data-empty="{{ 'yes' if not s.count else 'no' }}"></span>
+          <em>{{ s.label[0] }}</em>
+        </span>
+      {% endfor %}
+    </div>
+  </article>
 </section>
 
-<section class="panel">
+<!-- main grid -->
+<section class="dash-grid">
+
+  <!-- Receivables overview -->
+  <div class="panel receivables">
+    <div class="panel-head">
+      <h2>Receivables Ageing</h2>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-target="chart-amount">By Amount</button>
+        <button type="button" class="tab" data-target="chart-count">By Invoices</button>
+      </div>
+    </div>
+    <div class="recv-body">
+      <div class="chart-area">
+        <div id="chart-amount" class="chart">{{ bars(chart_amount, "Overdue amount in RM by days past due") }}</div>
+        <div id="chart-count" class="chart" hidden>{{ bars(chart_count, "Number of overdue invoices by days past due") }}</div>
+      </div>
+
+      <div class="donut-card">
+        <svg viewBox="0 0 180 180" class="donut" role="img" aria-label="Share of overdue amount by age">
+          <circle class="donut-track" cx="90" cy="90" r="{{ donut.radius }}"/>
+          {% for s in donut.segments %}
+            <circle class="donut-seg {{ s.cls }}" cx="90" cy="90" r="{{ donut.radius }}"
+                    stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}"
+                    transform="rotate(-90 90 90)"/>
+          {% endfor %}
+          <text class="donut-label" x="90" y="82" text-anchor="middle">Total Overdue</text>
+          <text class="donut-value" x="90" y="104" text-anchor="middle">RM {{ "{:,.2f}".format(total_overdue) }}</text>
+        </svg>
+        <ul class="legend">
+          {% for l in donut.legend %}
+            <li><span class="swatch {{ l.cls }}"></span><span class="legend-label">{{ l.label }}</span><span class="legend-pct">{{ l.pct }}%</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <p class="foot-note">Calculated from the overdue invoices in the demo data. No trend view: the prototype keeps no historical snapshots to plot.</p>
+  </div>
+
+  <!-- Recovery queue -->
+  <div class="panel queue">
+    <div class="panel-head">
+      <h2>Today's Recovery Queue <span class="count-chip">{{ overdue_count }} action{{ 's' if overdue_count != 1 else '' }}</span></h2>
+      <a class="link" href="{{ url_for('check_overdue') }}">View all →</a>
+    </div>
+    {% if queue %}
+    <div class="table-scroll"><table class="mini-table">
+      <thead><tr><th>Customer</th><th class="num">Amount</th><th class="num">Days</th><th>Risk</th><th></th></tr></thead>
+      <tbody>
+        {% for inv in queue %}
+        <tr>
+          <td>
+            <div class="who">
+              <span class="avatar sm {{ inv.risk.risk_tier }}">{{ inv.customer_name.split()[:2]|map('first')|join('') }}</span>
+              <div><strong>{{ inv.customer_name }}</strong><small class="mono">{{ inv.invoice_no }}</small></div>
+            </div>
+          </td>
+          <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
+          <td class="num">{{ inv.days_overdue }}</td>
+          <td><span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span></td>
+          <td class="action"><a class="btn btn-small btn-primary" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}" onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">Review →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="empty">Nothing overdue. Every issued invoice is paid or still within its due date.</p>
+    {% endif %}
+    <div class="queue-foot">{{ upcoming }} invoice{{ 's' if upcoming != 1 else '' }} with upcoming due dates</div>
+  </div>
+
+  <!-- right column -->
+    <div class="panel insight">
+      <div class="panel-head">
+        <h2>Collections Insight</h2>
+        <span class="tag">Rule-based</span>
+      </div>
+      {% if insight %}
+      <div class="insight-card tier-{{ insight.tier }}">
+        <div class="insight-top">
+          <span class="badge risk-{{ insight.tier }}">{{ insight.tier|capitalize }} priority</span>
+        </div>
+        <h3>{{ insight.invoice.customer_name }}</h3>
+        <p class="insight-meta">RM {{ "{:,.2f}".format(insight.invoice.amount) }} · {{ insight.invoice.days_overdue }} days overdue</p>
+        <ul class="bullets">
+          {% for b in insight.bullets %}<li>{{ b }}</li>{% endfor %}
+        </ul>
+        <p class="insight-action">{{ insight.invoice.risk.recommended_action }}</p>
+        <a class="btn btn-small btn-primary" href="{{ url_for('draft_reminder', invoice_id=insight.invoice.id) }}" onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">Review →</a>
+      </div>
+      <p class="foot-note">A plain summary of the top-priority invoice. The AI risk check and message drafting happen when you open an invoice.</p>
+      {% else %}
+        <p class="empty">No overdue invoices to summarise.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel riskmix">
+      <div class="panel-head"><h2>Risk Distribution</h2></div>
+      {% for r in risk_mix %}
+      <div class="mix-row">
+        <div class="mix-top">
+          <span class="badge risk-{{ r.tier }}">{{ r.tier|capitalize }}</span>
+          <span class="mix-count">{{ r.count }} invoice{{ 's' if r.count != 1 else '' }} · RM {{ "{:,.2f}".format(r.amount) }}</span>
+        </div>
+        <div class="mix-track"><span class="mix-fill tier-{{ r.tier }}" style="width: {{ r.pct }}%"></span></div>
+      </div>
+      {% endfor %}
+      <p class="foot-note">Share of overdue RM by risk tier, using the rule-based baseline.</p>
+    </div>
+</section>
+
+<!-- all invoices (keeps Mark as paid) -->
+<section class="panel invoices">
   <div class="panel-head">
-    <h2>Receivables ageing</h2>
-    <span class="muted">Money still owed, grouped by how many days past due</span>
+    <h2>All Invoices</h2>
+    <span class="tag">Synthetic demo data</span>
   </div>
-  <div class="ageing-grid">
-    {% for b in ageing %}
-    <div class="ageing-col sev-{{ loop.index0 }}">
-      <div class="ageing-amount">RM {{ "{:,.2f}".format(b.amount) }}</div>
-      <div class="ageing-bar"><span style="width: {{ (b.amount / ageing_max * 100)|round|int }}%"></span></div>
-      <div class="ageing-label">{{ b.label }} · {{ b.count }} invoice{{ 's' if b.count != 1 else '' }}</div>
-    </div>
-    {% endfor %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th class="num">Amount (RM)</th>
+          <th>Due Date</th>
+          <th>Status</th>
+          <th class="num">Past Late</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td>{{ inv.customer_name }}<br><span class="mono">{{ inv.invoice_no }}</span></td>
+          <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
+          <td class="nowrap">{{ inv.due_date }}</td>
+          <td>
+            <span class="badge badge-{{ inv.status|lower }}">{{ inv.status }}</span>
+            {% if inv.status == "Reminded" and inv.last_reminded %}
+              <br><small>on {{ inv.last_reminded }}</small>
+            {% endif %}
+          </td>
+          <td class="num">{{ inv.past_late_count }}</td>
+          <td class="action">
+            {% if inv.status != "Paid" %}
+            <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
+              <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 
-<div class="connect-card">
-  <div class="connect-icon">O</div>
-  <div class="connect-text">
-    <strong>Pulling live context from Orbyte</strong>
-    <span>Customer contact &amp; preferred language from People · invoices &amp; payment history from Connect</span>
-  </div>
-  <div class="module-tags">
-    <span class="module-tag">People</span>
-    <span class="module-tag">Connect</span>
-  </div>
-</div>
-
-<h1>Invoices</h1>
-<p class="subtitle">All invoices issued by this SME. Synthetic demo data only.</p>
-
-<div class="table-wrap">
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>Customer</th>
-      <th class="num">Amount (RM)</th>
-      <th>Due Date</th>
-      <th>Status</th>
-      <th class="num">Past Late</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for inv in invoices %}
-    <tr>
-      <td>
-        {{ inv.customer_name }}<br>
-        <span class="mono">{{ inv.invoice_no }}</span>
-      </td>
-      <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
-      <td>{{ inv.due_date }}</td>
-      <td>
-        <span class="badge badge-{{ inv.status|lower }}">{{ inv.status }}</span>
-        {% if inv.status == "Reminded" and inv.last_reminded %}
-          <br><small>on {{ inv.last_reminded }}</small>
-        {% endif %}
-      </td>
-      <td class="num">{{ inv.past_late_count }}</td>
-      <td class="action">
-        {% if inv.status != "Paid" %}
-        <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
-          <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-
-<br>
-<a class="btn btn-primary" href="{{ url_for('check_overdue') }}">Check Overdue Invoices</a>
+<script>
+  // "By Amount / By Invoices" switch for the ageing chart
+  (function () {
+    var tabs = document.querySelectorAll(".tabs .tab");
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        tabs.forEach(function (t) {
+          t.classList.toggle("active", t === tab);
+          document.getElementById(t.dataset.target).hidden = (t !== tab);
+        });
+      });
+    });
+  })();
+</script>
 {% endblock %}

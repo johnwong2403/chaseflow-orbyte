@@ -9,8 +9,14 @@ Automation journey (required by Domain 2):
   TRIGGER (check overdue) -> DATA (invoice + customer history)
   -> LOGIC (risk tier + draft message) -> APPROVAL (human clicks Approve)
   -> OUTCOME (logged + visible in Activity Log)
+
+Around that core journey there are three supporting views, all computed from
+the same data: Customers (who owes what), Invoices (every invoice), and CSV
+exports (so the numbers can be used in the SME's own finance work).
 """
 
+import csv
+import io
 import os
 import sys
 from datetime import date, datetime, timedelta
@@ -18,14 +24,19 @@ from datetime import date, datetime, timedelta
 # allow "from data import ..." style imports when run directly
 sys.path.insert(0, os.path.dirname(__file__))
 
-from flask import Flask, render_template, redirect, url_for, request
+from flask import Flask, Response, abort, render_template, redirect, url_for, request
 
+from charts import bar_chart, donut_segments
 from data import (
+    CUSTOMERS,
     INVOICES,
     ACTIVITY_LOG,
     mark_overdue_invoices,
     ageing_summary,
+    customer_summary,
+    customer_timeline,
     get_invoice_by_id,
+    is_overdue,
     log_activity,
     mark_paid,
 )
@@ -46,44 +57,194 @@ app = Flask(
     static_folder=os.path.join(PROJECT_ROOT, "static"),
 )
 
+RISK_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+# --------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------
+
+def _reminders_per_day(days=7):
+    """Real counts from the Activity Log: how many reminders were approved on
+    each of the last `days` days (oldest first). Used for the KPI mini chart."""
+    today = date.today()
+    counts = {today - timedelta(days=i): 0 for i in range(days)}
+    for log in ACTIVITY_LOG:
+        day = datetime.strptime(log["timestamp"], "%Y-%m-%d %H:%M:%S").date()
+        if day in counts:
+            counts[day] += 1
+    series = [{"day": d, "label": d.strftime("%a"), "count": c} for d, c in sorted(counts.items())]
+    peak = max((s["count"] for s in series), default=0) or 1
+    for s in series:
+        s["pct"] = round(s["count"] / peak * 100)
+    return series
+
+
+def _collections_insight(queue, overdue, total_overdue, avg_days):
+    """A plain, rule-based summary of the highest-priority overdue invoice.
+
+    Everything here is calculated from the invoice data — no AI call, and no
+    claims the data cannot support (for example, we do not know whether a
+    customer replied to an earlier reminder, so we never say so)."""
+    if not queue:
+        return None
+    inv = queue[0]
+    bullets = list(inv["risk"]["factors"])
+    share = inv["amount"] / total_overdue * 100 if total_overdue else 0
+    bullets.append(f"RM {inv['amount']:,.2f} is {share:.0f}% of all overdue money")
+    if inv.get("last_reminded"):
+        bullets.append(f"Already reminded on {inv['last_reminded']}")
+    else:
+        bullets.append("No reminder sent yet")
+    return {"invoice": inv, "tier": inv["risk"]["risk_tier"], "bullets": bullets}
+
+
+def _customer_risk(summary):
+    """A customer's risk = the highest tier among their overdue invoices
+    (None when nothing is overdue)."""
+    tiers = [assess_invoice_risk(inv)["risk_tier"] for inv in summary["overdue_invoices"]]
+    return min(tiers, key=lambda t: RISK_ORDER[t]) if tiers else None
+
+
+def _safe_next(default_endpoint):
+    """Where to go after a form: back to the page it came from, but only to a
+    path on this same site (never an outside URL)."""
+    target = request.form.get("next", "")
+    if target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for(default_endpoint)
+
+
+def _csv_cell(value):
+    """Stops spreadsheet programs treating text like '=1+1' as a formula."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@") else text
+
+
+def _csv_response(filename, header, rows):
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([_csv_cell(v) for v in row])
+    # utf-8 with BOM so Excel shows Bahasa Malaysia and Chinese text correctly
+    body = "﻿" + buffer.getvalue()
+    return Response(
+        body,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# --------------------------------------------------------------------------
+# dashboard
+# --------------------------------------------------------------------------
 
 @app.route("/")
 def dashboard():
-    """Shows every invoice plus live KPI stats and the receivables ageing —
+    """Shows live KPI stats, receivables ageing charts and the recovery queue —
     the measurable business benefit the PRD asks for, computed fresh from
     the current data."""
     overdue = mark_overdue_invoices()
+    for inv in overdue:
+        inv["risk"] = assess_invoice_risk(inv)
 
     total_overdue = sum(inv["amount"] for inv in overdue)
-    high_risk_count = sum(
-        1 for inv in overdue if assess_invoice_risk(inv)["risk_tier"] == "high"
-    )
+    high_risk_count = sum(1 for inv in overdue if inv["risk"]["risk_tier"] == "high")
     avg_days_overdue = (
         round(sum(inv["days_overdue"] for inv in overdue) / len(overdue), 1)
         if overdue else 0
     )
-    cutoff = datetime.now() - timedelta(days=7)
-    reminders_7d = sum(
-        1 for log in ACTIVITY_LOG
-        if datetime.strptime(log["timestamp"], "%Y-%m-%d %H:%M:%S") >= cutoff
-    )
+
+    reminder_series = _reminders_per_day(7)
+    reminders_7d = sum(s["count"] for s in reminder_series)
 
     ageing = ageing_summary(overdue)
-    ageing_max = max((b["amount"] for b in ageing), default=0) or 1
+
+    # days overdue per invoice, for the "Average Days Overdue" mini chart
+    longest = max((i["days_overdue"] for i in overdue), default=0) or 1
+    days_series = [
+        {
+            "label": i["customer_name"][0],
+            "name": i["customer_name"],
+            "days": i["days_overdue"],
+            "pct": round(i["days_overdue"] / longest * 100),
+        }
+        for i in sorted(overdue, key=lambda i: -i["days_overdue"])
+    ]
+
+    # recovery queue: riskiest first, then biggest amount first
+    ranked = sorted(overdue, key=lambda i: (RISK_ORDER[i["risk"]["risk_tier"]], -i["amount"]))
+
+    risk_mix = []
+    for tier in ("high", "medium", "low"):
+        items = [i for i in overdue if i["risk"]["risk_tier"] == tier]
+        amount = sum(i["amount"] for i in items)
+        risk_mix.append({
+            "tier": tier,
+            "count": len(items),
+            "amount": amount,
+            "pct": round(amount / total_overdue * 100) if total_overdue else 0,
+        })
+
+    # outstanding exposure: what each customer still owes (overdue + not yet due)
+    summaries = [customer_summary(c["id"]) for c in CUSTOMERS]
+    exposure = sorted(
+        (s for s in summaries if s["outstanding"] > 0),
+        key=lambda s: -s["outstanding"],
+    )[:6]
+    biggest = exposure[0]["outstanding"] if exposure else 1
+    exposure_rows = [
+        {
+            "id": s["customer"]["id"],
+            "name": s["customer"]["name"],
+            "outstanding": s["outstanding"],
+            "overdue": s["overdue_amount"],
+            "overdue_pct": round(s["overdue_amount"] / biggest * 100),
+            "pct": round(s["outstanding"] / biggest * 100),
+        }
+        for s in exposure
+    ]
+
+    upcoming = sum(
+        1 for inv in INVOICES
+        if inv["status"] in ("Unpaid", "Reminded") and inv["due_date"] >= date.today()
+    )
+    open_invoices = sorted(
+        (i for i in INVOICES if i["status"] != "Paid"), key=lambda i: i["due_date"]
+    )
+
+    activity_buckets = [
+        {"label": s["label"], "count": s["count"], "amount": 0} for s in reminder_series
+    ]
 
     return render_template(
         "dashboard.html",
-        invoices=INVOICES,
-        today=date.today().strftime("%d %b %Y"),
+        invoices=open_invoices,
+        today=date.today().strftime("%a, %d %b %Y"),
         overdue_count=len(overdue),
         total_overdue=total_overdue,
         high_risk_count=high_risk_count,
         avg_days_overdue=avg_days_overdue,
         reminders_7d=reminders_7d,
+        reminder_series=reminder_series,
+        days_series=days_series,
         ageing=ageing,
-        ageing_max=ageing_max,
+        chart_amount=bar_chart(ageing, "amount"),
+        chart_count=bar_chart(ageing, "count"),
+        chart_activity=bar_chart(activity_buckets, "count", single_class="sev-0", unit="reminder", show_sub=False),
+        donut=donut_segments(ageing),
+        queue=ranked[:4],
+        insight=_collections_insight(ranked, overdue, total_overdue, avg_days_overdue),
+        risk_mix=risk_mix,
+        exposure_rows=exposure_rows,
+        upcoming=upcoming,
     )
 
+
+# --------------------------------------------------------------------------
+# core automation journey
+# --------------------------------------------------------------------------
 
 @app.route("/check-overdue")
 def check_overdue():
@@ -92,9 +253,17 @@ def check_overdue():
     overdue = mark_overdue_invoices()
     for inv in overdue:
         inv["risk"] = assess_invoice_risk(inv)
-    risk_order = {"high": 0, "medium": 1, "low": 2}
-    overdue.sort(key=lambda inv: risk_order[inv["risk"]["risk_tier"]])
-    return render_template("review.html", overdue=overdue, languages=LANGUAGES)
+    overdue.sort(key=lambda inv: RISK_ORDER[inv["risk"]["risk_tier"]])
+    tier_counts = {
+        tier: sum(1 for inv in overdue if inv["risk"]["risk_tier"] == tier)
+        for tier in ("high", "medium", "low")
+    }
+    return render_template(
+        "review.html",
+        overdue=overdue,
+        languages=LANGUAGES,
+        tier_counts=tier_counts,
+    )
 
 
 @app.route("/draft/<int:invoice_id>")
@@ -116,6 +285,7 @@ def draft_reminder(invoice_id):
         "draft.html",
         invoice=invoice,
         draft=draft,
+        rule_check=assess_invoice_risk(invoice),
         languages=LANGUAGES,
         language=language,
     )
@@ -146,10 +316,11 @@ def approve_reminder(invoice_id):
 
 @app.route("/mark-paid/<int:invoice_id>", methods=["POST"])
 def mark_invoice_paid(invoice_id):
-    """Closes the loop: customer paid, invoice leaves the overdue list."""
+    """Closes the loop: customer paid, invoice leaves the overdue list.
+    Returns to the page the button was on."""
     if not mark_paid(invoice_id):
         return "Invoice not found", 404
-    return redirect(url_for("dashboard"))
+    return redirect(_safe_next("dashboard"))
 
 
 @app.route("/activity-log")
@@ -159,6 +330,119 @@ def activity_log():
         "activity_log.html",
         logs=list(reversed(ACTIVITY_LOG)),
         languages=LANGUAGES,
+    )
+
+
+# --------------------------------------------------------------------------
+# customers
+# --------------------------------------------------------------------------
+
+@app.route("/customers")
+def customers():
+    """Customer directory: who owes what, how risky, and when we last followed up."""
+    mark_overdue_invoices()
+    rows = []
+    for c in CUSTOMERS:
+        summary = customer_summary(c["id"])
+        rows.append({"summary": summary, "risk": _customer_risk(summary)})
+
+    def sort_key(row):
+        risk = row["risk"]
+        return (RISK_ORDER[risk] if risk else 9, -row["summary"]["outstanding"])
+
+    rows.sort(key=sort_key)
+    counts = {tier: sum(1 for r in rows if r["risk"] == tier) for tier in ("high", "medium", "low")}
+    counts["clear"] = sum(1 for r in rows if r["risk"] is None)
+    return render_template("customers.html", rows=rows, counts=counts, languages=LANGUAGES)
+
+
+@app.route("/customers/<int:customer_id>")
+def customer_detail(customer_id):
+    """One customer: money owed, why they are (or are not) risky, payment
+    record and everything the system has recorded about them."""
+    mark_overdue_invoices()
+    summary = customer_summary(customer_id)
+    if summary is None:
+        abort(404)
+
+    for inv in summary["overdue_invoices"]:
+        inv["risk"] = assess_invoice_risk(inv)
+    risk = _customer_risk(summary)
+
+    # payment record bars: positive = paid late, negative = paid early
+    spread = max((abs(r["days_late"]) for r in summary["records"]), default=0) or 1
+    for rec in summary["records"]:
+        rec["pct"] = round(abs(rec["days_late"]) / spread * 100)
+
+    return render_template(
+        "customer_detail.html",
+        s=summary,
+        risk=risk,
+        timeline=customer_timeline(customer_id),
+        languages=LANGUAGES,
+    )
+
+
+# --------------------------------------------------------------------------
+# invoices
+# --------------------------------------------------------------------------
+
+@app.route("/invoices")
+def invoices():
+    """Every invoice, not just the overdue ones, with practical filters."""
+    mark_overdue_invoices()
+    rows = []
+    for inv in sorted(INVOICES, key=lambda i: i["due_date"], reverse=True):
+        overdue = is_overdue(inv)
+        rows.append({
+            "inv": inv,
+            "overdue": overdue,
+            "days_overdue": (date.today() - inv["due_date"]).days if overdue else 0,
+        })
+    counts = {
+        "all": len(rows),
+        "paid": sum(1 for r in rows if r["inv"]["status"] == "Paid"),
+        "unpaid": sum(1 for r in rows if r["inv"]["status"] != "Paid"),
+        "overdue": sum(1 for r in rows if r["overdue"]),
+    }
+    return render_template("invoices.html", rows=rows, counts=counts)
+
+
+# --------------------------------------------------------------------------
+# CSV exports
+# --------------------------------------------------------------------------
+
+@app.route("/export/invoices.csv")
+def export_invoices():
+    mark_overdue_invoices()
+    rows = []
+    for inv in sorted(INVOICES, key=lambda i: i["due_date"], reverse=True):
+        overdue = is_overdue(inv)
+        days = (date.today() - inv["due_date"]).days if overdue else 0
+        rows.append([
+            inv["invoice_no"], inv["customer_name"], f"{inv['amount']:.2f}", inv["due_date"],
+            inv["status"], "yes" if overdue else "no", days,
+            inv["paid_date"] or "", inv["last_reminded"] or "",
+        ])
+    return _csv_response(
+        "chaseflow-invoices.csv",
+        ["Invoice No", "Customer", "Amount (RM)", "Due Date", "Status", "Overdue",
+         "Days Overdue", "Paid Date", "Last Reminded"],
+        rows,
+    )
+
+
+@app.route("/export/activity.csv")
+def export_activity():
+    rows = [
+        [e["timestamp"], e["customer_name"], e["invoice_no"], e["risk_tier"],
+         LANGUAGES.get(e["language"], {}).get("label", ""), e["approved_by"], e["message_sent"]]
+        for e in reversed(ACTIVITY_LOG)
+    ]
+    return _csv_response(
+        "chaseflow-activity-log.csv",
+        ["Time", "Customer", "Invoice No", "Risk Tier", "Language", "Approved By", "Message"],
+        rows,
     )
 
 

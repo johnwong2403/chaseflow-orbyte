@@ -4,23 +4,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ChaseFlow for Orbyte</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">ChaseFlow <span>for Orbyte</span></div>
-    <div class="topbar-right">
-      <nav>
-        {% set ep = request.endpoint %}
-        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' else '' }}">Dashboard</a>
-        <a href="{{ url_for('check_overdue') }}" class="{{ 'active' if ep in ('check_overdue', 'draft_reminder') else '' }}">Check Overdue</a>
-        <a href="{{ url_for('activity_log') }}" class="{{ 'active' if ep == 'activity_log' else '' }}">Activity Log</a>
+  {% set ep = request.endpoint %}
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span class="brand-text">ChaseFlow<small>for Orbyte</small></span>
+      </div>
+
+      <nav class="side-nav">
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' else '' }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="{{ url_for('check_overdue') }}" class="{{ 'active' if ep in ('check_overdue', 'draft_reminder') else '' }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <span>Check Overdue</span>
+        </a>
+        <a href="{{ url_for('activity_log') }}" class="{{ 'active' if ep == 'activity_log' else '' }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+          <span>Activity Log</span>
+        </a>
       </nav>
-      <span class="pill-badge"><span class="dot"></span> Connected to Orbyte Hub</span>
-    </div>
-  </header>
-  <main class="content">
-    {% block content %}{% endblock %}
-  </main>
+
+      <div class="side-status">
+        <div class="side-status-title"><span class="dot"></span> Orbyte-ready prototype</div>
+        <p>Built as a module for the Orbyte ecosystem. No live Orbyte connection: all data is synthetic demo data and sending is simulated.</p>
+      </div>
+
+      <div class="side-user">
+        <span class="avatar">J</span>
+        <div><strong>John</strong><small>Team ZH</small></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </body>
 </html>
