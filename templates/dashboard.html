@@ -8,7 +8,7 @@
   <div class="kpi-row">
     <div class="kpi">
       <div class="label">Total Overdue</div>
-      <div class="value bad">RM {{ "%.2f"|format(total_overdue) }}</div>
+      <div class="value bad">RM {{ "{:,.2f}".format(total_overdue) }}</div>
     </div>
     <div class="kpi">
       <div class="label">High-Risk Customers</div>
@@ -48,6 +48,7 @@
       <th>Due Date</th>
       <th>Status</th>
       <th>Past Late Payments</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -58,8 +59,18 @@
       <td>{{ inv.due_date }}</td>
       <td>
         <span class="badge badge-{{ inv.status|lower }}">{{ inv.status }}</span>
+        {% if inv.status == "Reminded" and inv.last_reminded %}
+          <br><small>on {{ inv.last_reminded }}</small>
+        {% endif %}
       </td>
       <td>{{ inv.past_late_count }}</td>
+      <td>
+        {% if inv.status != "Paid" %}
+        <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
+          <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>

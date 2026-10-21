@@ -20,7 +20,14 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, render_template, redirect, url_for, request
 
-from data import INVOICES, ACTIVITY_LOG, mark_overdue_invoices, get_invoice_by_id, log_activity
+from data import (
+    INVOICES,
+    ACTIVITY_LOG,
+    mark_overdue_invoices,
+    get_invoice_by_id,
+    log_activity,
+    mark_paid,
+)
 from reminder_ai import generate_reminder_draft, assess_invoice_risk
 
 # main.py lives in src/, but templates/ and static/ live one level up, at the
@@ -83,6 +90,7 @@ def draft_reminder(invoice_id):
     invoice = get_invoice_by_id(invoice_id)
     if invoice is None:
         return "Invoice not found", 404
+    mark_overdue_invoices()  # makes sure days_overdue is filled in for this invoice
     draft = generate_reminder_draft(invoice)
     return render_template("draft.html", invoice=invoice, draft=draft)
 
@@ -101,6 +109,14 @@ def approve_reminder(invoice_id):
     log_activity(invoice_id, invoice["customer_name"], final_message, risk_tier=risk_tier)
 
     return redirect(url_for("activity_log"))
+
+
+@app.route("/mark-paid/<int:invoice_id>", methods=["POST"])
+def mark_invoice_paid(invoice_id):
+    """Closes the loop: customer paid, invoice leaves the overdue list."""
+    if not mark_paid(invoice_id):
+        return "Invoice not found", 404
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/activity-log")
