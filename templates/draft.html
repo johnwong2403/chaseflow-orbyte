@@ -15,7 +15,13 @@
   <!-- left: what ChaseFlow decided, and why -->
   <section class="panel analysis">
     <div class="analysis-top">
+      <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <span class="badge risk-{{ draft.risk_tier }}">{{ draft.risk_tier|capitalize }} risk</span>
+      {% if draft.source == 'ai' and draft.risk_tier != rule_check.risk_tier %}
+        {% set order = {'low': 0, 'medium': 1, 'high': 2} %}
+        <span class="tag">AI {{ 'raised' if order[draft.risk_tier] > order[rule_check.risk_tier] else 'lowered' }} from {{ rule_check.risk_tier|capitalize }}</span>
+      {% endif %}
+      </span>
       <span class="mono">{{ invoice.invoice_no }}</span>
     </div>
 
