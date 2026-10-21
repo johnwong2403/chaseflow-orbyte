@@ -1,29 +1,37 @@
 """
 DECISION LOGIC step of the automation journey.
 
-This module is where an AI model will be called to judge how risky an
-overdue invoice is, and draft a follow-up reminder message with a tone that
-matches that risk. The decision depends on:
-  - how many days the invoice is overdue
-  - how many times this customer has paid late before (past_late_count)
+For one overdue invoice, this module asks an AI model (Google Gemini) to:
+  1. judge the risk tier (low / medium / high)
+  2. recommend what the SME owner should do next
+  3. draft a reminder message in a tone that matches that risk
 
-For this first version, generate_reminder_draft() uses a RULE-BASED
-placeholder (no AI call yet) so the rest of the app can be built and tested
-end-to-end first. We will swap the body of this function to call a real
-LLM API next, WITHOUT changing any other file or any other function's
-signature — that is the point of isolating this logic in its own module.
+A human always reviews and approves the result before anything is sent.
+
+Two layers, on purpose:
+  - RULES (_assess_risk): a simple, transparent baseline from days overdue and
+    past late payments. It is given to the AI as a starting point, and it is
+    the fallback if the AI is unavailable, so the app never breaks in a demo.
+  - AI (_ask_gemini): reads the full context, confirms or adjusts the baseline,
+    explains why, and writes the actual message.
 """
 
+import json
+import os
+
+import requests
+
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+VALID_TIERS = ("low", "medium", "high")
+
+
+# --------------------------------------------------------------------------
+# Layer 1: transparent rules (baseline + fallback)
+# --------------------------------------------------------------------------
 
 def _assess_risk(days_overdue: int, past_late_count: int) -> str:
-    """Decide the risk tier for this overdue invoice: low / medium / high.
-
-    This is the 'AI makes a judgment call' part of ChaseFlow (not just
-    drafting text) — it looks at the pattern of this customer's behaviour,
-    not just the amount owed, and recommends how urgently to act.
-    This rule will stay even after we add the AI call: it is the business
-    logic deciding which risk tier applies, which is different from the AI
-    writing the actual sentence."""
+    """Baseline risk tier from two simple facts about the invoice."""
     if days_overdue <= 5 and past_late_count == 0:
         return "low"
     if days_overdue <= 14 or past_late_count <= 1:
@@ -31,11 +39,7 @@ def _assess_risk(days_overdue: int, past_late_count: int) -> str:
     return "high"
 
 
-_TONE_FOR_RISK = {
-    "low": "gentle",
-    "medium": "firm",
-    "high": "final_notice",
-}
+_TONE_FOR_RISK = {"low": "gentle", "medium": "firm", "high": "final_notice"}
 
 _ACTION_FOR_RISK = {
     "low": "Gentle nudge — this customer usually pays within the week once reminded.",
@@ -45,72 +49,142 @@ _ACTION_FOR_RISK = {
 
 
 def assess_invoice_risk(invoice: dict) -> dict:
-    """Lightweight risk assessment only (no message draft).
+    """Quick rule-based risk for the overdue LIST page.
 
-    Used on the overdue-invoices list page, so we can show every row's risk
-    tier and recommended action WITHOUT calling the (future) AI API once per
-    row just to render a list. The full draft (generate_reminder_draft) is
-    only generated when the owner opens one specific invoice to act on it.
+    No AI call here: we don't want one API request per table row just to
+    show a list. The AI looks at an invoice only when the owner opens it.
     """
-    days = invoice.get("days_overdue", 0)
-    past_late_count = invoice["past_late_count"]
-    risk_tier = _assess_risk(days, past_late_count)
+    risk_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
     return {
         "risk_tier": risk_tier,
         "recommended_action": _ACTION_FOR_RISK[risk_tier],
     }
 
 
-def generate_reminder_draft(invoice: dict) -> dict:
-    """
-    Returns a dict describing ChaseFlow's recommendation for one overdue
-    invoice, for a human to review/edit/approve before anything is sent:
-
-      {
-        "risk_tier": "low" | "medium" | "high",
-        "tone": "gentle" | "firm" | "final_notice",
-        "recommended_action": str,   # plain-English advice for the owner
-        "message": str,              # the editable draft reminder text
-      }
-
-    TODO (next step): replace the message-building below with a real AI API
-    call that takes (customer_name, amount, days_overdue, past_late_count,
-    tone) and generates natural, personalised wording. The risk/tone
-    decision above stays the same either way — the AI drafts the sentence,
-    the rule above decides how firm that sentence should be.
-    """
-    days = invoice.get("days_overdue", 0)
-    past_late_count = invoice["past_late_count"]
+def _rule_based_message(invoice: dict, tone: str) -> str:
     name = invoice["customer_name"]
     amount = invoice["amount"]
-
-    risk_tier = _assess_risk(days, past_late_count)
-    tone = _TONE_FOR_RISK[risk_tier]
-    recommended_action = _ACTION_FOR_RISK[risk_tier]
-
+    days = invoice.get("days_overdue", 0)
     if tone == "gentle":
-        message = (
-            f"Hi {name}, just a friendly reminder that invoice for RM{amount:.2f} "
+        return (
+            f"Hi {name}, just a friendly reminder that your invoice for RM{amount:.2f} "
             f"was due {days} day(s) ago. Could you let us know when we can expect "
             f"payment? Thank you!"
         )
-    elif tone == "firm":
-        message = (
+    if tone == "firm":
+        return (
             f"Dear {name}, this is a follow-up on your outstanding invoice of "
             f"RM{amount:.2f}, now {days} days overdue. Please arrange payment "
             f"as soon as possible, or contact us if there is an issue we should know about."
         )
-    else:  # final_notice
-        message = (
-            f"Dear {name}, your invoice of RM{amount:.2f} is significantly overdue "
-            f"({days} days) and this is a repeated late payment on your account. "
-            f"Please settle this immediately to avoid a pause on future orders. "
-            f"Contact us today to resolve this."
-        )
+    return (
+        f"Dear {name}, your invoice of RM{amount:.2f} is significantly overdue "
+        f"({days} days) and this is a repeated late payment on your account. "
+        f"Please settle this immediately to avoid a pause on future orders. "
+        f"Contact us today to resolve this."
+    )
 
+
+def _rule_based_draft(invoice: dict) -> dict:
+    days = invoice.get("days_overdue", 0)
+    risk_tier = _assess_risk(days, invoice["past_late_count"])
+    tone = _TONE_FOR_RISK[risk_tier]
     return {
         "risk_tier": risk_tier,
         "tone": tone,
-        "recommended_action": recommended_action,
-        "message": message,
+        "recommended_action": _ACTION_FOR_RISK[risk_tier],
+        "reasoning": "Rule-based fallback: based on days overdue and past late payments.",
+        "message": _rule_based_message(invoice, tone),
+        "source": "rules",
     }
+
+
+# --------------------------------------------------------------------------
+# Layer 2: the AI call
+# --------------------------------------------------------------------------
+
+def _build_prompt(invoice: dict, baseline_tier: str) -> str:
+    return f"""You are a collections assistant for a small business in Malaysia.
+An invoice is overdue. Decide how risky it is and help the owner follow up.
+
+Invoice facts:
+- Customer: {invoice["customer_name"]}
+- Amount: RM{invoice["amount"]:.2f}
+- Days overdue: {invoice.get("days_overdue", 0)}
+- Times this customer has paid late before: {invoice["past_late_count"]}
+
+A simple rule suggests the risk tier "{baseline_tier}". You may keep it or move it
+by one level if the facts justify it (for example a large amount, or a worsening pattern).
+
+Return ONLY a JSON object with exactly these keys:
+- "risk_tier": one of "low", "medium", "high"
+- "recommended_action": one sentence of practical advice for the business owner
+- "reasoning": one or two sentences explaining why you chose this tier
+- "message": a reminder message to send to the customer, 2 to 4 sentences. Tone:
+  low = friendly and gentle, medium = polite but firm, high = serious final notice.
+  Use only the facts above. Do not invent dates, bank details or penalties.
+  Sign off as "Accounts Team"."""
+
+
+def _ask_gemini(invoice: dict, baseline_tier: str) -> dict:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+
+    response = requests.post(
+        GEMINI_URL.format(model=GEMINI_MODEL),
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        json={
+            "contents": [{"parts": [{"text": _build_prompt(invoice, baseline_tier)}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.4,
+            },
+        },
+        timeout=25,
+    )
+    response.raise_for_status()
+
+    parts = response.json()["candidates"][0]["content"]["parts"]
+    result = json.loads("".join(p.get("text", "") for p in parts))
+
+    # Don't blindly trust the model's output: check it before using it.
+    tier = str(result.get("risk_tier", "")).lower()
+    if tier not in VALID_TIERS:
+        raise ValueError(f"AI returned invalid risk_tier: {tier!r}")
+    for key in ("recommended_action", "reasoning", "message"):
+        if not str(result.get(key, "")).strip():
+            raise ValueError(f"AI response missing '{key}'")
+
+    return {
+        "risk_tier": tier,
+        "tone": _TONE_FOR_RISK[tier],
+        "recommended_action": result["recommended_action"].strip(),
+        "reasoning": result["reasoning"].strip(),
+        "message": result["message"].strip(),
+        "source": "ai",
+    }
+
+
+def generate_reminder_draft(invoice: dict) -> dict:
+    """Returns the recommendation for one overdue invoice, for a human to
+    review, edit and approve:
+
+      {
+        "risk_tier": "low" | "medium" | "high",
+        "tone": "gentle" | "firm" | "final_notice",
+        "recommended_action": str,
+        "reasoning": str,     # why this tier
+        "message": str,       # editable draft
+        "source": "ai" | "rules",   # who produced it
+      }
+
+    If the AI call fails for any reason (no key, network, bad output), we fall
+    back to the rule-based draft so the owner is never left with nothing.
+    """
+    baseline_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
+    try:
+        return _ask_gemini(invoice, baseline_tier)
+    except Exception as error:  # noqa: BLE001 - deliberate catch-all, see docstring
+        print(f"[reminder_ai] AI call failed, using rule-based fallback: {error}")
+        return _rule_based_draft(invoice)

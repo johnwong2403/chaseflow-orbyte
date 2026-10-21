@@ -19,3 +19,9 @@ args = "python3 src/main.py"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+GEMINI_API_KEY = "AQ.Ab8RN6LuIOxJt6k2CGCwSvaHzZzNAeur_s_VRkBrHoUAuv5oOw"
+GEMINI_MODEL = "gemini-flash-lite-latest"

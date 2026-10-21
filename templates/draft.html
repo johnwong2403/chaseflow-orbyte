@@ -11,11 +11,19 @@
 </p>
 
 <p><strong>Recommended action:</strong> {{ draft.recommended_action }}</p>
+<p><strong>Why:</strong> {{ draft.reasoning }}</p>
+<p>
+  {% if draft.source == "ai" %}
+    <span class="pill-badge"><span class="dot"></span> Drafted by AI (Gemini)</span>
+  {% else %}
+    <span class="badge badge-pending">Rule-based fallback (AI unavailable)</span>
+  {% endif %}
+</p>
 
 <form method="post" action="{{ url_for('approve_reminder', invoice_id=invoice.id) }}">
   <input type="hidden" name="risk_tier" value="{{ draft.risk_tier }}">
   <label for="message"><strong>Reminder message (edit if needed):</strong></label><br>
-  <textarea id="message" name="message" rows="6" style="width:100%; max-width:640px; margin-top:8px;">{{ draft.message }}</textarea>
+  <textarea id="message" name="message" rows="7" style="width:100%; max-width:640px; margin-top:8px;">{{ draft.message }}</textarea>
   <br><br>
   <button type="submit" class="btn btn-primary">Approve &amp; Send</button>
   <a class="btn btn-ghost" href="{{ url_for('check_overdue') }}">Cancel</a>
