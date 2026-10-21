@@ -21,7 +21,54 @@
     {% for inv in overdue %}
     <tr>
       <td>
-        {{ inv.customer_name }}<br>
+        {{ in{% extends "base.html" %}
+        {% block content %}
+        <h1>Overdue Invoices</h1>
+        <p class="subtitle">Triggered just now — these invoices are past due and unpaid, highest risk first.</p>
+
+        {% if overdue|length == 0 %}
+          <p>No overdue invoices right now. Nothing to chase.</p>
+        {% else %}
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th class="num">Amount (RM)</th>
+              <th class="num">Days Overdue</th>
+              <th>Risk Tier</th>
+              <th>Recommended Action</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in overdue %}
+            <tr>
+              <td>
+                {{ inv.customer_name }}<br>
+                <span class="mono">{{ inv.invoice_no }}</span>
+                <br><small>{{ inv.past_late_count }} late payment(s) · chats in {{ languages[inv.preferred_language].label }}</small>
+                {% if inv.status == "Reminded" and inv.last_reminded %}
+                  <br><span class="badge badge-reminded">Reminded {{ inv.last_reminded }}</span>
+                {% endif %}
+              </td>
+              <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
+              <td class="num">{{ inv.days_overdue }}</td>
+              <td><span class="badge risk-{{ inv.risk.risk_tier }}">{{ inv.risk.risk_tier|capitalize }}</span></td>
+              <td>{{ inv.risk.recommended_action }}</td>
+              <td class="action">
+                <a class="btn btn-small" href="{{ url_for('draft_reminder', invoice_id=inv.id) }}"
+                   onclick="this.textContent='AI is thinking…'; this.style.opacity='0.7';">
+                  {% if inv.status == "Reminded" %}Follow up again{% else %}Generate Reminder{% endif %}
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% endif %}
+        {% endblock %}.customer_name }}<br>
         <small>{{ inv.past_late_count }} late payment(s) on record</small>
         {% if inv.status == "Reminded" and inv.last_reminded %}
           <br><span class="badge badge-reminded">Reminded {{ inv.last_reminded }}</span>

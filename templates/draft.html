@@ -6,7 +6,90 @@
 <p>
   <span class="badge risk-{{ draft.risk_tier }}">{{ draft.risk_tier|capitalize }} risk</span>
   &nbsp; RM {{ "%.2f"|format(invoice.amount) }} &nbsp;·&nbsp;
-  {{ invoice.days_overdue }} days overdue &nbsp;·&nbsp;
+  {{ invoice.days_overdu{% extends "base.html" %}
+  {% block content %}
+  <h1>Review Reminder — {{ invoice.customer_name }}</h1>
+  <p class="subtitle">ChaseFlow's draft. Nothing is sent until you approve it.</p>
+
+  <form method="post" action="{{ url_for('approve_reminder', invoice_id=invoice.id) }}" class="draft-grid">
+    <input type="hidden" name="risk_tier" value="{{ draft.risk_tier }}">
+    <input type="hidden" name="language" value="{{ draft.language }}">
+
+    <!-- left: what ChaseFlow decided, and why -->
+    <section class="panel analysis">
+      <div class="analysis-top">
+        <span class="badge risk-{{ draft.risk_tier }}">{{ draft.risk_tier|capitalize }} risk</span>
+        <span class="mono">{{ invoice.invoice_no }}</span>
+      </div>
+
+      <dl class="facts">
+        <div><dt>Amount</dt><dd>RM {{ "{:,.2f}".format(invoice.amount) }}</dd></div>
+        <div><dt>Overdue</dt><dd>{{ invoice.days_overdue }} days</dd></div>
+        <div><dt>Late before</dt><dd>{{ invoice.past_late_count }} time(s)</dd></div>
+      </dl>
+
+      <p><strong>Recommended action</strong><br>{{ draft.recommended_action }}</p>
+      <p><strong>Why this tier</strong><br>{{ draft.reasoning }}</p>
+
+      <p>
+        {% if draft.source == "ai" %}
+          <span class="pill-badge"><span class="dot"></span> Drafted by AI (Gemini)</span>
+        {% else %}
+          <span class="badge badge-pending">Rule-based fallback (AI unavailable)</span>
+        {% endif %}
+      </p>
+    </section>
+
+    <!-- right: the message, shown as a chat the owner can edit -->
+    <section class="chat-col">
+      <div class="lang-switch" role="group" aria-label="Message language">
+        {% for code, lang in languages.items() %}
+          <a href="{{ url_for('draft_reminder', invoice_id=invoice.id, lang=code) }}"
+             class="{{ 'active' if code == language else '' }}"
+             {% if code != language %}onclick="this.textContent='Rewriting…'; this.style.opacity='0.7';"{% endif %}>{{ lang.label }}</a>
+        {% endfor %}
+      </div>
+      <p class="lang-note">
+        {% if language == invoice.preferred_language %}
+          Language taken from the customer's record in Orbyte People.
+        {% else %}
+          You switched the language — the customer's record says {{ languages[invoice.preferred_language].label }}.
+        {% endif %}
+      </p>
+
+      <div class="wa">
+        <div class="wa-head">
+          <div class="wa-avatar">{{ invoice.customer_name[0] }}</div>
+          <div>
+            <div class="wa-name">{{ invoice.customer_name }}</div>
+            <div class="wa-phone">{{ invoice.phone }} · WhatsApp (simulated)</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble">
+            <textarea id="message" name="message" rows="2" aria-label="Reminder message (edit if needed)">{{ draft.message }}</textarea>
+            <div class="wa-meta">Edit the text directly · nothing is actually sent</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="draft-actions">
+        <button type="submit" class="btn btn-primary">Approve &amp; Send</button>
+        <a class="btn btn-ghost" href="{{ url_for('check_overdue') }}">Cancel</a>
+      </div>
+    </section>
+  </form>
+
+  <script>
+    // let the chat bubble grow with the text, so long Chinese / Malay drafts never need scrolling
+    (function () {
+      var box = document.getElementById("message");
+      function fit() { box.style.height = "auto"; box.style.height = box.scrollHeight + "px"; }
+      box.addEventListener("input", fit);
+      fit();
+    })();
+  </script>
+  {% endblock %} }} days overdue &nbsp;·&nbsp;
   {{ invoice.past_late_count }} late payment(s) on record
 </p>
 

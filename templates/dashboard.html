@@ -1,9 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
-  <div class="eyebrow">Collections Risk Advisor</div>
-  <h1>Know who to chase, and how firmly.</h1>
-  <p class="lede">ChaseFlow scans your invoices, scores each overdue customer's risk, and drafts the right-tone reminder — you approve before anything goes out.</p>
+  <div class="eyebrow">Collections · {{ today }}</div>
+  {% if overdue_count == 0 %}
+    <h1>Nothing overdue today.</h1>
+    <p class="lede">Every issued invoice is either paid or still within its due date.</p>
+  {% else %}
+    <h1>RM {{ "{:,.2f}".format(total_overdue) }} is waiting to be collected.</h1>
+    <p class="lede">
+      {{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 else '' }}, {{ high_risk_count }} high risk.
+      ChaseFlow drafts each follow-up in the customer's own language — nothing goes out until you approve it.
+    </p>
+  {% endif %}
 
   <div class="kpi-row">
     <div class="kpi">
@@ -25,11 +33,27 @@
   </div>
 </section>
 
+<section class="panel">
+  <div class="panel-head">
+    <h2>Receivables ageing</h2>
+    <span class="muted">Money still owed, grouped by how many days past due</span>
+  </div>
+  <div class="ageing-grid">
+    {% for b in ageing %}
+    <div class="ageing-col sev-{{ loop.index0 }}">
+      <div class="ageing-amount">RM {{ "{:,.2f}".format(b.amount) }}</div>
+      <div class="ageing-bar"><span style="width: {{ (b.amount / ageing_max * 100)|round|int }}%"></span></div>
+      <div class="ageing-label">{{ b.label }} · {{ b.count }} invoice{{ 's' if b.count != 1 else '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 <div class="connect-card">
   <div class="connect-icon">O</div>
   <div class="connect-text">
     <strong>Pulling live context from Orbyte</strong>
-    <span>Customer records from People · invoice &amp; payment history from Connect</span>
+    <span>Customer contact &amp; preferred language from People · invoices &amp; payment history from Connect</span>
   </div>
   <div class="module-tags">
     <span class="module-tag">People</span>
@@ -40,22 +64,26 @@
 <h1>Invoices</h1>
 <p class="subtitle">All invoices issued by this SME. Synthetic demo data only.</p>
 
+<div class="table-wrap">
 <table class="data-table">
   <thead>
     <tr>
       <th>Customer</th>
-      <th>Amount (RM)</th>
+      <th class="num">Amount (RM)</th>
       <th>Due Date</th>
       <th>Status</th>
-      <th>Past Late Payments</th>
+      <th class="num">Past Late</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
     {% for inv in invoices %}
     <tr>
-      <td>{{ inv.customer_name }}</td>
-      <td>{{ "%.2f"|format(inv.amount) }}</td>
+      <td>
+        {{ inv.customer_name }}<br>
+        <span class="mono">{{ inv.invoice_no }}</span>
+      </td>
+      <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
       <td>{{ inv.due_date }}</td>
       <td>
         <span class="badge badge-{{ inv.status|lower }}">{{ inv.status }}</span>
@@ -63,8 +91,8 @@
           <br><small>on {{ inv.last_reminded }}</small>
         {% endif %}
       </td>
-      <td>{{ inv.past_late_count }}</td>
-      <td>
+      <td class="num">{{ inv.past_late_count }}</td>
+      <td class="action">
         {% if inv.status != "Paid" %}
         <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
           <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
@@ -75,6 +103,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 <br>
 <a class="btn btn-primary" href="{{ url_for('check_overdue') }}">Check Overdue Invoices</a>
