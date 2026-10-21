@@ -84,6 +84,12 @@
                 {% else %}
                   <small class="inline-note">not yet due</small>
                 {% endif %}
+                {% set pr = promise_by_invoice[inv.id] %}
+                {% if pr and pr.status in ('pending', 'broken') %}
+                  <br><a class="badge pstat-{{ pr.status }} promise-chip" href="#promises">
+                    {% if pr.status == 'pending' %}Promised · {{ pr.promised_date.strftime('%d %b') }}{% else %}Broken · {{ pr.promised_date.strftime('%d %b') }}{% endif %}
+                  </a>
+                {% endif %}
               </td>
               <td class="action">
                 {% if inv in s.overdue_invoices %}
@@ -104,6 +110,71 @@
       </div>
       {% else %}
         <p class="empty">No open invoices. Everything issued to this customer has been paid.</p>
+      {% endif %}
+    </div>
+
+    <!-- payment promises -->
+    <div class="panel" id="promises">
+      <div class="panel-head">
+        <h2>Payment promises</h2>
+        <span class="tag">Recorded by you</span>
+      </div>
+
+      {% if promise_stats.total %}
+      <div class="promise-stats">
+        <span><strong>{{ promise_stats.total }}</strong> recorded</span>
+        <span class="ps-kept"><strong>{{ promise_stats.kept }}</strong> kept</span>
+        <span class="ps-missed"><strong>{{ promise_stats.missed }}</strong> missed</span>
+        <span class="ps-pending"><strong>{{ promise_stats.pending }}</strong> waiting</span>
+      </div>
+      <ul class="promise-list">
+        {% for p in promises %}
+        <li>
+          <div class="promise-top">
+            <span class="mono">{{ p.invoice.invoice_no }}</span>
+            <span class="pay-amount">RM {{ "{:,.2f}".format(p.invoice.amount) }}</span>
+            <span class="badge pstat-{{ p.status }}">{{ p.label }}</span>
+          </div>
+          <div class="promise-line">
+            Promised to pay by <strong>{{ p.promised_date.strftime('%d %b %Y') }}</strong>
+            {% if p.status == 'pending' %}
+              <small class="inline-note">{% if p.days_to_go == 0 %}today{% elif p.days_to_go == 1 %}tomorrow{% else %}in {{ p.days_to_go }} days{% endif %}</small>
+            {% elif p.status == 'broken' %}
+              <small class="inline-note">{{ -p.days_to_go }} day{{ 's' if p.days_to_go != -1 else '' }} ago, still unpaid</small>
+            {% elif p.status in ('kept', 'paid_late') %}
+              <small class="inline-note">invoice paid {{ p.invoice.paid_date }}</small>
+            {% endif %}
+          </div>
+          {% if p.note %}<small class="promise-note">“{{ p.note }}”</small>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+        <p class="empty">No promises recorded yet. When this customer replies with a payment date, log it here.</p>
+      {% endif %}
+
+      {% if promise_error %}<p class="form-error" role="alert" style="margin-top:14px;">{{ promise_error }}</p>{% endif %}
+      {% if s.open_invoices %}
+      <form method="post" action="{{ url_for('add_promise') }}" class="promise-form">
+        <h3>Log a promise</h3>
+        <div class="pf-row">
+          <label>Invoice
+            <select name="invoice_id" required>
+              {% for inv in s.open_invoices %}
+              <option value="{{ inv.id }}" {{ 'selected' if error_invoice_id == inv.id else '' }}>{{ inv.invoice_no }} · RM {{ "{:,.2f}".format(inv.amount) }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Customer will pay by
+            <input type="date" name="promised_date" min="{{ promise_min }}" max="{{ promise_max }}" required>
+          </label>
+        </div>
+        <label><span>Note <span class="muted-text">(optional)</span></span>
+          <input type="text" name="note" maxlength="120" placeholder="e.g. Said he will transfer after payday">
+        </label>
+        <button type="submit" class="btn btn-small btn-primary">Save promise</button>
+        <p class="foot-note">The status (kept, paid late or broken) is worked out from the invoice's real payment, so you never have to update it by hand. A newer promise on the same invoice replaces the older one, which stays in the history.</p>
+      </form>
       {% endif %}
     </div>
 
@@ -191,7 +262,7 @@
       </li>
       {% endfor %}
     </ol>
-    <p class="foot-note">Only events the system recorded are shown: approved reminders (simulated sends) and payments marked as paid.</p>
+    <p class="foot-note">Only events the system recorded are shown: approved reminders (simulated sends), payment promises, and payments marked as paid.</p>
     {% else %}
       <p class="empty">Nothing recorded for this customer yet.</p>
     {% endif %}

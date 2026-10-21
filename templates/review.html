@@ -47,6 +47,12 @@
                 {% if inv.status == "Reminded" and inv.last_reminded %}
                   <span class="badge badge-reminded">Reminded {{ inv.last_reminded }}</span>
                 {% endif %}
+                {% set pr = promises[inv.id] %}
+                {% if pr and pr.status in ('pending', 'broken') %}
+                  <span class="badge pstat-{{ pr.status }}">
+                    {% if pr.status == 'pending' %}Promised · {{ pr.promised_date.strftime('%d %b') }}{% else %}Broken · {{ pr.promised_date.strftime('%d %b') }}{% endif %}
+                  </span>
+                {% endif %}
               </div>
             </div>
           </td>

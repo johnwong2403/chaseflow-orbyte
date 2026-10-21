@@ -26,6 +26,14 @@ Single source of truth
 
 Invoice status lifecycle:
     Unpaid  --(owner approves a reminder)-->  Reminded  --(payment received)-->  Paid
+
+Payment promises
+----------------
+  When a customer says "I will pay on <date>", the owner records it as a
+  promise on that invoice (PROMISES). A promise's status (pending / kept /
+  paid late / broken / replaced) is never typed in: it is worked out from the
+  promised date and the invoice's real state, so it can't disagree with the
+  payment records.
 """
 
 import copy
@@ -173,9 +181,41 @@ ACTIVITY_LOG = [
     ),
 ]
 
+# --- Payment promises ---------------------------------------------------
+# A promise = "this customer said they will pay this invoice on this date".
+# Newest promise on an invoice is the one that counts; older ones stay as history.
+
+PROMISE_MAX_DAYS = 60   # a promised date further away than this is rejected
+PROMISE_NOTE_MAX = 120
+
+
+def _seed_promise(id, invoice_id, promised_in_days, created_days_ago, note):
+    invoice = get_invoice_by_id(invoice_id)
+    created = datetime.now().replace(hour=14, minute=30, second=0, microsecond=0) - timedelta(days=created_days_ago)
+    return {
+        "id": id,
+        "invoice_id": invoice_id,
+        "customer_id": invoice["customer_id"],
+        "promised_date": _days(promised_in_days),
+        "note": note,
+        "created": created.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+# SYNTHETIC demo promises, so the feature is visible on first load:
+#  - Mei Ling Bakery promised a date that has already passed (a broken promise)
+#  - Siti's Boutique promised a date two days from now (still pending)
+PROMISES = [
+    _seed_promise(1, 2, promised_in_days=-2, created_days_ago=6,
+                  note="Said she would transfer after the weekend."),
+    _seed_promise(2, 4, promised_in_days=2, created_days_ago=0,
+                  note="Will pay once her own customer settles."),
+]
+
 # A copy of the starting state, so the demo can be put back exactly as it began.
 _STARTING_INVOICES = copy.deepcopy(INVOICES)
 _STARTING_LOG = copy.deepcopy(ACTIVITY_LOG)
+_STARTING_PROMISES = copy.deepcopy(PROMISES)
 
 # Invoices that were marked paid during this run (invoice id -> status before).
 # Only these can be undone; the paid history that came with the demo data stays.
@@ -293,12 +333,169 @@ def mark_unpaid(invoice_id):
 
 
 def reset_demo_data():
-    """Puts the synthetic invoices and the activity log back to the way they
+    """Puts the synthetic invoices, activity log and promises back to the way they
     started. Edits the lists in place, because other modules hold references."""
     INVOICES[:] = copy.deepcopy(_STARTING_INVOICES)
     ACTIVITY_LOG[:] = copy.deepcopy(_STARTING_LOG)
+    PROMISES[:] = copy.deepcopy(_STARTING_PROMISES)
     _PAID_IN_SESSION.clear()
     _sync_customer_fields()
+
+
+# --- Payment promises: logic --------------------------------------------
+
+PROMISE_LABELS = {
+    "pending": "Promised",
+    "kept": "Kept",
+    "paid_late": "Paid late",
+    "broken": "Broken",
+    "replaced": "Replaced",
+}
+
+
+def promise_status(promise):
+    """Worked out from facts, never stored:
+      kept       invoice paid on or before the promised date
+      paid_late  invoice paid, but after the promised date
+      broken     promised date has passed and the invoice is still unpaid
+      replaced   a newer promise was recorded and this date has not passed yet
+      pending    promised date is today or later, and no newer promise exists"""
+    invoice = get_invoice_by_id(promise["invoice_id"])
+    if invoice["status"] == "Paid" and invoice["paid_date"] is not None:
+        return "kept" if invoice["paid_date"] <= promise["promised_date"] else "paid_late"
+    if promise["promised_date"] < date.today():
+        return "broken"
+    newer = any(p["invoice_id"] == promise["invoice_id"] and p["id"] > promise["id"] for p in PROMISES)
+    return "replaced" if newer else "pending"
+
+
+def _with_status(promise):
+    invoice = get_invoice_by_id(promise["invoice_id"])
+    status = promise_status(promise)
+    days_to_go = (promise["promised_date"] - date.today()).days
+    return {
+        **promise,
+        "status": status,
+        "label": PROMISE_LABELS[status],
+        "invoice": invoice,
+        "days_to_go": days_to_go,
+        "created_dt": datetime.strptime(promise["created"], "%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def promises_for_invoice(invoice_id):
+    """Every promise on one invoice, newest first."""
+    items = [_with_status(p) for p in PROMISES if p["invoice_id"] == invoice_id]
+    return sorted(items, key=lambda p: p["id"], reverse=True)
+
+
+def latest_promise(invoice_id):
+    items = promises_for_invoice(invoice_id)
+    return items[0] if items else None
+
+
+def all_promises():
+    """Every recorded promise, newest first (for the Activity Log page)."""
+    return sorted((_with_status(p) for p in PROMISES), key=lambda p: p["id"], reverse=True)
+
+
+def customer_promises(customer_id):
+    items = [_with_status(p) for p in PROMISES if p["customer_id"] == customer_id]
+    return sorted(items, key=lambda p: p["id"], reverse=True)
+
+
+def promise_stats(customer_id):
+    items = customer_promises(customer_id)
+    return {
+        "total": len(items),
+        "kept": sum(1 for p in items if p["status"] == "kept"),
+        "missed": sum(1 for p in items if p["status"] in ("broken", "paid_late")),
+        "pending": sum(1 for p in items if p["status"] == "pending"),
+    }
+
+
+def promise_context(invoice):
+    """What the promise history means for the next chase of this invoice.
+
+    Returns None when the customer has made no promise on it. Otherwise:
+      latest  the newest promise (with status)
+      missed  how many promises this customer has missed in total
+      hint    one rule-based sentence of advice for the owner (no AI)
+      ai_text the plain facts handed to the AI, so its draft can refer to them"""
+    latest = latest_promise(invoice["id"])
+    if latest is None:
+        return None
+    missed = promise_stats(invoice["customer_id"])["missed"]
+    when = latest["promised_date"].strftime("%d %b %Y")
+    ago = -latest["days_to_go"]
+
+    if latest["status"] == "broken":
+        hint = (f"Broken promise: the customer said they would pay on {when} "
+                f"({ago} day{'s' if ago != 1 else ''} ago) and has not. Follow up firmly and refer to that date.")
+        ai_text = (f"The customer promised to pay on {when}, {ago} day(s) ago, but payment has not arrived.")
+    elif latest["status"] == "pending":
+        hint = (f"Open promise: the customer said they will pay on {when}. "
+                f"Consider waiting until then before chasing again.")
+        ai_text = f"The customer has promised to pay on {when}."
+    else:
+        hint = ""
+        ai_text = ""
+    if ai_text and missed:
+        ai_text += f" This customer has missed {missed} payment promise(s) in total."
+    return {"latest": latest, "missed": missed, "hint": hint, "ai_text": ai_text}
+
+
+def log_promise(invoice_id, promised_date_text, note=""):
+    """Records "customer promised to pay on <date>" for one unpaid invoice.
+
+    Returns (promise, None) on success or (None, plain-English error).
+    The date must be today or later and no more than PROMISE_MAX_DAYS away."""
+    invoice = get_invoice_by_id(invoice_id)
+    if invoice is None:
+        return None, "Invoice not found."
+    if invoice["status"] == "Paid":
+        return None, "This invoice is already paid, so there is nothing to promise."
+    try:
+        promised = datetime.strptime((promised_date_text or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None, "Please choose a valid date."
+    today = date.today()
+    if promised < today:
+        return None, "The promised date cannot be in the past."
+    if promised > today + timedelta(days=PROMISE_MAX_DAYS):
+        return None, f"The promised date must be within {PROMISE_MAX_DAYS} days from today."
+
+    promise = {
+        "id": max((p["id"] for p in PROMISES), default=0) + 1,
+        "invoice_id": invoice_id,
+        "customer_id": invoice["customer_id"],
+        "promised_date": promised,
+        "note": " ".join((note or "").split())[:PROMISE_NOTE_MAX],
+        "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    PROMISES.append(promise)
+    return promise, None
+
+
+def promise_overview():
+    """Dashboard-style totals over open invoices, using each invoice's newest promise."""
+    pending, broken = [], []
+    for inv in INVOICES:
+        if inv["status"] == "Paid":
+            continue
+        latest = latest_promise(inv["id"])
+        if latest is None:
+            continue
+        if latest["status"] == "pending":
+            pending.append(latest)
+        elif latest["status"] == "broken":
+            broken.append(latest)
+    return {
+        "pending_count": len(pending),
+        "pending_amount": sum(p["invoice"]["amount"] for p in pending),
+        "broken_count": len(broken),
+        "broken_amount": sum(p["invoice"]["amount"] for p in broken),
+    }
 
 
 # --- Customer views -----------------------------------------------------
@@ -367,7 +564,7 @@ def customer_summary(customer_id):
 
 def customer_timeline(customer_id):
     """Events the system has actually recorded for this customer, newest first:
-    reminders a human approved (Activity Log) and invoices marked paid (payment records)."""
+    reminders a human approved (Activity Log), payment promises, and invoices marked paid."""
     events = []
     for entry in ACTIVITY_LOG:
         if entry.get("customer_id") == customer_id:
@@ -393,6 +590,28 @@ def customer_timeline(customer_id):
             "kind": "paid",
             "title": f"{inv['invoice_no']} paid · RM {inv['amount']:,.2f}",
             "detail": note,
+            "risk": "",
+            "language": "",
+        })
+    for p in customer_promises(customer_id):
+        inv = p["invoice"]
+        when = p["promised_date"].strftime("%d %b %Y")
+        if p["status"] == "kept":
+            outcome = f"Kept: paid on {inv['paid_date']}"
+        elif p["status"] == "paid_late":
+            outcome = f"Paid late: paid on {inv['paid_date']}, after the promised date"
+        elif p["status"] == "broken":
+            outcome = "Broken: promised date passed and the invoice is still unpaid"
+        elif p["status"] == "replaced":
+            outcome = "Replaced by a newer promise"
+        else:
+            outcome = "Waiting: the promised date has not arrived yet"
+        detail = f"{outcome}. {p['note']}" if p["note"] else outcome
+        events.append({
+            "when": p["created_dt"],
+            "kind": "promise",
+            "title": f"Promised to pay {inv['invoice_no']} by {when}",
+            "detail": detail,
             "risk": "",
             "language": "",
         })

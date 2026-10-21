@@ -213,6 +213,15 @@ def _rule_based_draft(invoice: dict, language: str) -> dict:
 
 def _build_prompt(invoice: dict, baseline_tier: str, language: str) -> str:
     lang = LANGUAGES[language]
+    # Optional fact from the owner's own records: a payment promise the customer made.
+    promise = str(invoice.get("promise_context") or "").strip()
+    promise_line = f"\n- Payment promise: {promise}" if promise else ""
+    promise_rule = (
+        "\nThe payment promise above is a recorded fact. If the customer broke a promise, that is "
+        "a good reason to move the tier up one level, and the message should politely refer to the "
+        "promised date. If the promise is still open, say so in your advice and keep the message gentle."
+        if promise else ""
+    )
     return f"""You are a collections assistant for a small business in Malaysia.
 An invoice is overdue. Decide how risky it is and help the owner follow up.
 
@@ -221,10 +230,10 @@ Invoice facts:
 - Invoice number: {invoice.get("invoice_no", "n/a")}
 - Amount: RM{invoice["amount"]:.2f}
 - Days overdue: {invoice.get("days_overdue", 0)}
-- Times this customer has paid late before: {invoice["past_late_count"]}
+- Times this customer has paid late before: {invoice["past_late_count"]}{promise_line}
 
 A simple rule suggests the risk tier "{baseline_tier}". You may keep it or move it
-by one level if the facts justify it (for example a large amount, or a worsening pattern).
+by one level if the facts justify it (for example a large amount, or a worsening pattern).{promise_rule}
 
 Return ONLY a JSON object with exactly these keys:
 - "risk_tier": one of "low", "medium", "high"
@@ -320,6 +329,7 @@ def _cache_key(invoice: dict, language: str) -> tuple:
     return (
         invoice.get("id"), invoice.get("invoice_no"), invoice["customer_name"], invoice["amount"],
         invoice.get("days_overdue", 0), invoice["past_late_count"], language,
+        invoice.get("promise_context", ""),
     )
 
 

@@ -9,10 +9,12 @@ Automation journey (required by Domain 2):
   TRIGGER (check overdue) -> DATA (invoice + customer history)
   -> LOGIC (risk tier + draft message) -> APPROVAL (human clicks Approve)
   -> OUTCOME (logged + visible in Activity Log)
+  -> FOLLOW-UP (the customer promises a date; the app tracks whether it was kept)
 
-Around that core journey there are three supporting views, all computed from
-the same data: Customers (who owes what), Invoices (every invoice), and CSV
-exports (so the numbers can be used in the SME's own finance work).
+Around that core journey there are supporting views, all computed from the
+same data: Customers (who owes what, and their payment promises), Invoices
+(every invoice), and CSV exports (so the numbers can be used in the SME's own
+finance work).
 """
 
 import csv
@@ -31,16 +33,24 @@ from data import (
     CUSTOMERS,
     INVOICES,
     ACTIVITY_LOG,
+    PROMISE_MAX_DAYS,
+    all_promises,
     mark_overdue_invoices,
     ageing_summary,
+    customer_promises,
     customer_summary,
     customer_timeline,
+    get_customer,
     get_invoice_by_id,
     is_overdue,
     can_undo_paid,
+    latest_promise,
     log_activity,
+    log_promise,
     mark_paid,
     mark_unpaid,
+    promise_context,
+    promise_stats,
     reset_demo_data,
 )
 from reminder_ai import (
@@ -261,11 +271,13 @@ def check_overdue():
         tier: sum(1 for inv in overdue if inv["risk"]["risk_tier"] == tier)
         for tier in ("high", "medium", "low")
     }
+    promises = {inv["id"]: latest_promise(inv["id"]) for inv in overdue}
     return render_template(
         "review.html",
         overdue=overdue,
         languages=LANGUAGES,
         tier_counts=tier_counts,
+        promises=promises,
     )
 
 
@@ -283,12 +295,20 @@ def draft_reminder(invoice_id):
     mark_overdue_invoices()  # makes sure days_overdue is filled in for this invoice
 
     language = normalise_language(request.args.get("lang") or invoice["preferred_language"])
-    draft = generate_reminder_draft(invoice, language)
+
+    # If the customer has made a payment promise, the AI is told about it (as a
+    # plain recorded fact). It goes in a copy, so the stored invoice is untouched.
+    promise = promise_context(invoice)
+    invoice_for_ai = dict(invoice)
+    invoice_for_ai["promise_context"] = promise["ai_text"] if promise else ""
+
+    draft = generate_reminder_draft(invoice_for_ai, language)
     return render_template(
         "draft.html",
         invoice=invoice,
         draft=draft,
         rule_check=assess_invoice_risk(invoice),
+        promise=promise,
         languages=LANGUAGES,
         language=language,
     )
@@ -348,6 +368,7 @@ def activity_log():
     return render_template(
         "activity_log.html",
         logs=list(reversed(ACTIVITY_LOG)),
+        promises=all_promises(),
         languages=LANGUAGES,
     )
 
@@ -375,10 +396,8 @@ def customers():
     return render_template("customers.html", rows=rows, counts=counts, languages=LANGUAGES)
 
 
-@app.route("/customers/<int:customer_id>")
-def customer_detail(customer_id):
-    """One customer: money owed, why they are (or are not) risky, payment
-    record and everything the system has recorded about them."""
+def _render_customer_detail(customer_id, promise_error=None, error_invoice_id=None):
+    """Builds the customer page. Also used to show a promise form error in place."""
     mark_overdue_invoices()
     summary = customer_summary(customer_id)
     if summary is None:
@@ -393,13 +412,48 @@ def customer_detail(customer_id):
     for rec in summary["records"]:
         rec["pct"] = round(abs(rec["days_late"]) / spread * 100)
 
+    today = date.today()
     return render_template(
         "customer_detail.html",
         s=summary,
         risk=risk,
         timeline=customer_timeline(customer_id),
+        promises=customer_promises(customer_id),
+        promise_stats=promise_stats(customer_id),
+        promise_by_invoice={inv["id"]: latest_promise(inv["id"]) for inv in summary["open_invoices"]},
+        promise_min=today.isoformat(),
+        promise_max=(today + timedelta(days=PROMISE_MAX_DAYS)).isoformat(),
+        promise_error=promise_error,
+        error_invoice_id=error_invoice_id,
         languages=LANGUAGES,
+    ), (400 if promise_error else 200)
+
+
+@app.route("/customers/<int:customer_id>")
+def customer_detail(customer_id):
+    """One customer: money owed, why they are (or are not) risky, payment
+    promises, payment record and everything the system has recorded about them."""
+    body, status = _render_customer_detail(customer_id)
+    return body, status
+
+
+@app.route("/promise", methods=["POST"])
+def add_promise():
+    """FOLLOW-UP step: the customer replied "I will pay on <date>". The owner
+    records it; ChaseFlow then tracks whether the promise was kept."""
+    invoice_id = request.form.get("invoice_id", type=int)
+    invoice = get_invoice_by_id(invoice_id) if invoice_id is not None else None
+    if invoice is None or get_customer(invoice["customer_id"]) is None:
+        abort(404)
+    promise, error = log_promise(
+        invoice_id,
+        request.form.get("promised_date", ""),
+        request.form.get("note", ""),
     )
+    if error:
+        body, status = _render_customer_detail(invoice["customer_id"], error, invoice_id)
+        return body, status
+    return redirect(url_for("customer_detail", customer_id=invoice["customer_id"]) + "#promises")
 
 
 # --------------------------------------------------------------------------

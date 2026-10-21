@@ -33,6 +33,15 @@
     </ul>
     <p class="rule-text">{{ rule_check.rule }}</p>
 
+    {% if promise and promise.hint %}
+    <h3>Payment promise <span class="tag">From your records</span></h3>
+    <div class="promise-box pstat-box-{{ promise.latest.status }}">
+      <span class="badge pstat-{{ promise.latest.status }}">{{ promise.latest.label }}</span>
+      <p>{{ promise.hint }}</p>
+      {% if promise.missed %}<small>This customer has missed {{ promise.missed }} promise{{ 's' if promise.missed != 1 else '' }} in total.</small>{% endif %}
+    </div>
+    {% endif %}
+
     <h3>AI explanation <span class="tag">{{ 'Gemini' if draft.source == 'ai' else 'Fallback text' }}</span></h3>
     <p>{{ draft.reasoning }}</p>
 

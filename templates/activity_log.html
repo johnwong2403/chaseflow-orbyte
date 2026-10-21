@@ -54,4 +54,43 @@
   <div class="table-foot">{{ logs|length }} logged reminder{{ 's' if logs|length != 1 else '' }}</div>
 </div>
 {% endif %}
+
+<div class="panel" style="margin-top:16px;">
+  <div class="panel-head">
+    <h2>Payment promises</h2>
+    <span class="tag">Recorded by you</span>
+  </div>
+  {% if promises|length == 0 %}
+    <p class="empty">No payment promises recorded yet. Log one from a customer's page.</p>
+  {% else %}
+  <div class="table-wrap flat">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Recorded</th>
+          <th>Customer</th>
+          <th>Promised date</th>
+          <th>Status</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in promises %}
+        <tr>
+          <td class="nowrap">{{ p.created }}</td>
+          <td>
+            <a class="text-link" href="{{ url_for('customer_detail', customer_id=p.customer_id) }}">{{ p.invoice.customer_name }}</a>
+            <br><span class="mono">{{ p.invoice.invoice_no }}</span>
+          </td>
+          <td class="nowrap">{{ p.promised_date.strftime('%d %b %Y') }}</td>
+          <td><span class="badge pstat-{{ p.status }}">{{ p.label }}</span></td>
+          <td class="msg">{{ p.note or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-foot">Status is worked out from the promised date and the invoice's real payment.</div>
+  {% endif %}
+</div>
 {% endblock %}
