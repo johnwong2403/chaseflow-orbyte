@@ -2,18 +2,19 @@
 {% block content %}
 
 {% macro bars(c, label) %}
-<svg viewBox="0 0 {{ c.width }} {{ c.height }}" class="bar-svg" role="img" aria-label="{{ label }}">
+<svg viewBox="0 0 {{ c.width }} {{ c.height }}" class="bar-svg" role="group" aria-label="{{ label }}">
   {% for t in c.ticks %}
     <line class="grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/>
     <text class="axis" x="{{ c.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>
   {% endfor %}
   {% for b in c.bars %}
-    <rect class="bar {{ b.cls }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="4"><title>{{ b.tip }}</title></rect>
+    <rect class="bar {{ b.cls }}" tabindex="0" data-tip="{{ b.tip }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="4"><title>{{ b.tip }}</title></rect>
     <text class="val" x="{{ b.cx }}" y="{{ b.y - 8 }}" text-anchor="middle">{{ b.value_label }}</text>
     <text class="cat" x="{{ b.cx }}" y="{{ c.base + 20 }}" text-anchor="middle">{{ b.label }}</text>
     <text class="sub" x="{{ b.cx }}" y="{{ c.base + 36 }}" text-anchor="middle">{{ b.sub }}</text>
   {% endfor %}
 </svg>
+<div class="readout">Hover or tap a bar for details</div>
 {% endmacro %}
 
 <header class="page-head">
@@ -115,10 +116,10 @@
       </div>
 
       <div class="donut-card">
-        <svg viewBox="0 0 180 180" class="donut" role="img" aria-label="Share of overdue amount by age">
+        <svg viewBox="0 0 180 180" class="donut" id="donut" role="img" aria-label="Share of overdue amount by age">
           <circle class="donut-track" cx="90" cy="90" r="{{ donut.radius }}"/>
           {% for s in donut.segments %}
-            <circle class="donut-seg {{ s.cls }}" cx="90" cy="90" r="{{ donut.radius }}"
+            <circle class="donut-seg {{ s.cls }}" data-sev="{{ s.cls }}" cx="90" cy="90" r="{{ donut.radius }}"
                     stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}"
                     transform="rotate(-90 90 90)"/>
           {% endfor %}
@@ -127,7 +128,7 @@
         </svg>
         <ul class="legend">
           {% for l in donut.legend %}
-            <li><span class="swatch {{ l.cls }}"></span><span class="legend-label">{{ l.label }}</span><span class="legend-pct">{{ l.pct }}%</span></li>
+            <li data-sev="{{ l.cls }}"><span class="swatch {{ l.cls }}"></span><span class="legend-label">{{ l.label }}</span><span class="legend-pct">{{ l.pct }}%</span></li>
           {% endfor %}
         </ul>
       </div>
@@ -302,6 +303,52 @@
         });
       });
     });
+  })();
+</script>
+
+<script>
+  // chart interaction: hover or click a bar to light it up and read its numbers
+  (function () {
+    document.querySelectorAll(".bar-svg").forEach(function (svg) {
+      var readout = svg.nextElementSibling;
+      var bars = svg.querySelectorAll(".bar");
+      var selected = null;
+      var idle = readout.textContent;
+
+      function show(text) { readout.textContent = text; readout.classList.add("on"); }
+      function restore() {
+        if (selected) show(selected.dataset.tip);
+        else { readout.textContent = idle; readout.classList.remove("on"); }
+      }
+      bars.forEach(function (bar) {
+        bar.addEventListener("mouseenter", function () { show(bar.dataset.tip); });
+        bar.addEventListener("mouseleave", restore);
+        bar.addEventListener("focus", function () { show(bar.dataset.tip); });
+        bar.addEventListener("blur", restore);
+        function pick() {
+          selected = (selected === bar) ? null : bar;
+          bars.forEach(function (b) { b.classList.toggle("selected", b === selected); });
+          svg.classList.toggle("has-sel", !!selected);
+          restore();
+        }
+        bar.addEventListener("click", pick);
+        bar.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      });
+    });
+
+    // donut: hovering a slice or its legend row highlights both
+    var donut = document.getElementById("donut");
+    if (donut) {
+      var items = document.querySelectorAll("[data-sev]");
+      function mark(sev, on) {
+        items.forEach(function (el) { el.classList.toggle("hl", on && el.dataset.sev === sev); });
+        donut.classList.toggle("has-hl", on);
+      }
+      items.forEach(function (el) {
+        el.addEventListener("mouseenter", function () { mark(el.dataset.sev, true); });
+        el.addEventListener("mouseleave", function () { mark(el.dataset.sev, false); });
+      });
+    }
   })();
 </script>
 {% endblock %}
