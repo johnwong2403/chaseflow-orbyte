@@ -17,8 +17,11 @@ Two layers, on purpose:
     explains why, and writes the actual message.
 """
 
+import copy
 import json
 import os
+import threading
+import time
 
 import requests
 
@@ -234,35 +237,50 @@ Return ONLY a JSON object with exactly these keys:
   Sign off as "{lang["signoff"]}"."""
 
 
+class _TransientAIError(Exception):
+    """A failure worth one more try: rate limit, busy server, timeout, odd output."""
+
+
 def _ask_gemini(invoice: dict, baseline_tier: str, language: str) -> dict:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
 
-    response = requests.post(
-        GEMINI_URL.format(model=GEMINI_MODEL),
-        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": _build_prompt(invoice, baseline_tier, language)}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.4,
+    try:
+        response = requests.post(
+            GEMINI_URL.format(model=GEMINI_MODEL),
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": _build_prompt(invoice, baseline_tier, language)}]}],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.4,
+                },
             },
-        },
-        timeout=25,
-    )
+            timeout=20,
+        )
+    except (requests.Timeout, requests.ConnectionError) as error:
+        raise _TransientAIError(f"network problem: {error}") from error
+
+    # 429 = too many requests, 5xx = Gemini is busy: worth retrying.
+    # 400/401/403/404 = our key, model name or request is wrong: retrying won't help.
+    if response.status_code == 429 or response.status_code >= 500:
+        raise _TransientAIError(f"Gemini returned HTTP {response.status_code}")
     response.raise_for_status()
 
-    parts = response.json()["candidates"][0]["content"]["parts"]
-    result = json.loads("".join(p.get("text", "") for p in parts))
+    try:
+        parts = response.json()["candidates"][0]["content"]["parts"]
+        result = json.loads("".join(p.get("text", "") for p in parts))
+    except (KeyError, IndexError, ValueError) as error:
+        raise _TransientAIError(f"unreadable AI output: {error}") from error
 
     # Don't blindly trust the model's output: check it before using it.
     tier = str(result.get("risk_tier", "")).lower()
     if tier not in VALID_TIERS:
-        raise ValueError(f"AI returned invalid risk_tier: {tier!r}")
+        raise _TransientAIError(f"AI returned invalid risk_tier: {tier!r}")
     for key in ("recommended_action", "reasoning", "message"):
         if not str(result.get(key, "")).strip():
-            raise ValueError(f"AI response missing '{key}'")
+            raise _TransientAIError(f"AI response missing '{key}'")
 
     return {
         "risk_tier": tier,
@@ -275,7 +293,59 @@ def _ask_gemini(invoice: dict, baseline_tier: str, language: str) -> dict:
     }
 
 
-def generate_reminder_draft(invoice: dict, language: str = DEFAULT_LANGUAGE) -> dict:
+def _ask_gemini_with_retry(invoice: dict, baseline_tier: str, language: str) -> dict:
+    """One automatic retry for temporary problems, so a single hiccup
+    doesn't push the owner onto the fallback text."""
+    try:
+        return _ask_gemini(invoice, baseline_tier, language)
+    except _TransientAIError as error:
+        print(f"[reminder_ai] temporary AI problem, retrying once: {error}", flush=True)
+        time.sleep(1)
+        return _ask_gemini(invoice, baseline_tier, language)
+
+
+# --------------------------------------------------------------------------
+# Speed: remember finished AI drafts, and warm up the other languages
+# --------------------------------------------------------------------------
+# Kept in memory only (same as the demo data). Only real AI drafts are
+# remembered, never the fallback, so a failed attempt is tried again next time.
+
+_CACHE = {}
+_KEY_LOCKS = {}
+_REGISTRY_LOCK = threading.Lock()
+
+
+def _cache_key(invoice: dict, language: str) -> tuple:
+    # includes the facts the draft depends on, so a changed invoice is never served a stale draft
+    return (
+        invoice.get("id"), invoice.get("invoice_no"), invoice["customer_name"], invoice["amount"],
+        invoice.get("days_overdue", 0), invoice["past_late_count"], language,
+    )
+
+
+def _lock_for(key: tuple) -> threading.Lock:
+    with _REGISTRY_LOCK:
+        return _KEY_LOCKS.setdefault(key, threading.Lock())
+
+
+def _prefetch_other_languages(invoice: dict, current_language: str) -> None:
+    """Quietly draft the other languages in the background, one after another
+    (not all at once, to stay friendly to the API's rate limit), so switching
+    language later is instant."""
+    snapshot = copy.deepcopy(invoice)
+
+    def work():
+        for code in LANGUAGES:
+            if code != current_language:
+                try:
+                    generate_reminder_draft(snapshot, code, prefetch_others=False)
+                except Exception as error:  # noqa: BLE001 - background work must never raise
+                    print(f"[reminder_ai] background draft skipped: {error}", flush=True)
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def generate_reminder_draft(invoice: dict, language: str = DEFAULT_LANGUAGE, prefetch_others: bool = True) -> dict:
     """Returns the recommendation for one overdue invoice, for a human to
     review, edit and approve:
 
@@ -291,11 +361,27 @@ def generate_reminder_draft(invoice: dict, language: str = DEFAULT_LANGUAGE) -> 
 
     If the AI call fails for any reason (no key, network, bad output), we fall
     back to the rule-based draft so the owner is never left with nothing.
+    Temporary problems get one automatic retry first.
     """
     language = normalise_language(language)
-    baseline_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
-    try:
-        return _ask_gemini(invoice, baseline_tier, language)
-    except Exception as error:  # noqa: BLE001 - deliberate catch-all, see docstring
-        print(f"[reminder_ai] AI call failed, using rule-based fallback: {error}", flush=True)
-        return _rule_based_draft(invoice, language)
+    key = _cache_key(invoice, language)
+
+    # one request per invoice+language at a time: if the background warm-up is
+    # already drafting this language, we wait for it instead of asking twice
+    with _lock_for(key):
+        cached = _CACHE.get(key)
+        if cached is not None:
+            return copy.deepcopy(cached)
+
+        baseline_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
+        try:
+            draft = _ask_gemini_with_retry(invoice, baseline_tier, language)
+        except Exception as error:  # noqa: BLE001 - deliberate catch-all, see docstring
+            print(f"[reminder_ai] AI call failed, using rule-based fallback: {error}", flush=True)
+            return _rule_based_draft(invoice, language)
+
+        _CACHE[key] = copy.deepcopy(draft)
+
+    if prefetch_others:
+        _prefetch_other_languages(invoice, language)
+    return draft
