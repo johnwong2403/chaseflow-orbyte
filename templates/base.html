@@ -11,9 +11,10 @@
     <div class="brand">ChaseFlow <span>for Orbyte</span></div>
     <div class="topbar-right">
       <nav>
-        <a href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('check_overdue') }}">Check Overdue</a>
-        <a href="{{ url_for('activity_log') }}">Activity Log</a>
+        {% set ep = request.endpoint %}
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' else '' }}">Dashboard</a>
+        <a href="{{ url_for('check_overdue') }}" class="{{ 'active' if ep in ('check_overdue', 'draft_reminder') else '' }}">Check Overdue</a>
+        <a href="{{ url_for('activity_log') }}" class="{{ 'active' if ep == 'activity_log' else '' }}">Activity Log</a>
       </nav>
       <span class="pill-badge"><span class="dot"></span> Connected to Orbyte Hub</span>
     </div>

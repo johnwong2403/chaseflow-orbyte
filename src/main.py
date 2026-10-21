@@ -130,4 +130,4 @@ if __name__ == "__main__":
     # Debug mode (auto-reload + in-browser debugger) is only for local editing.
     # On a published Replit deployment REPLIT_DEPLOYMENT is set, so it stays off.
     is_deployed = bool(os.environ.get("REPLIT_DEPLOYMENT"))
-    app.run(host="0.0.0.0", port=port, debug=not is_deployed)v
+    app.run(host="0.0.0.0", port=port, debug=not is_deployed)
