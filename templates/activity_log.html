@@ -1,45 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Activity Log</h1>
-<p class="subtitle">OUTCOME step — every reminder a human approved, kept here for audit. Sending is simulated in this prototype.</p>
+<header class="page-head slim">
+  <div>
+    <h1>Activity Log</h1>
+    <p class="lede">Every reminder a human approved, kept here for audit. Sending is simulated in this prototype.</p>
+  </div>
+  {% if logs|length %}
+  <div class="head-right">
+    <a class="btn btn-ghost" href="{{ url_for('export_activity') }}">Export CSV</a>
+  </div>
+  {% endif %}
+</header>
 
 {% if logs|length == 0 %}
-  <p>Nothing sent yet. Approved reminders will show up here.</p>
+  <div class="panel"><p class="empty">Nothing sent yet. Approved reminders will show up here.</p></div>
 {% else %}
-<div class="table-wrap">
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>Time</th>
-      <th>Customer</th>
-      <th>Risk Tier</th>
-      <th>Language</th>
-      <th>Message Sent</th>
-      <th>Approved By</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for log in logs %}
-    <tr>
-      <td class="nowrap">{{ log.timestamp }}</td>
-      <td>
-        {{ log.customer_name }}
-        {% if log.invoice_no %}<br><span class="mono">{{ log.invoice_no }}</span>{% endif %}
-      </td>
-      <td>
-        {% if log.risk_tier %}
-          <span class="badge risk-{{ log.risk_tier }}">{{ log.risk_tier|capitalize }}</span>
-        {% else %}
-          —
-        {% endif %}
-      </td>
-      <td class="nowrap">{% if log.language %}{{ languages[log.language].label }}{% else %}—{% endif %}</td>
-      <td class="msg">{{ log.message_sent }}</td>
-      <td>{{ log.approved_by }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="panel">
+  <div class="table-wrap flat">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Customer</th>
+          <th>Risk</th>
+          <th>Language</th>
+          <th>Message Sent</th>
+          <th>Approved By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="nowrap">{{ log.timestamp }}</td>
+          <td>
+            {% if log.customer_id %}<a class="text-link" href="{{ url_for('customer_detail', customer_id=log.customer_id) }}">{{ log.customer_name }}</a>{% else %}{{ log.customer_name }}{% endif %}
+            {% if log.invoice_no %}<br><span class="mono">{{ log.invoice_no }}</span>{% endif %}
+          </td>
+          <td>
+            {% if log.risk_tier %}
+              <span class="badge risk-{{ log.risk_tier }}">{{ log.risk_tier|capitalize }}</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="nowrap">{% if log.language %}{{ languages[log.language].label }}{% else %}—{% endif %}</td>
+          <td class="msg">{{ log.message_sent }}</td>
+          <td><span class="badge badge-paid">{{ log.approved_by }} · approved</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-foot">{{ logs|length }} logged reminder{{ 's' if logs|length != 1 else '' }}</div>
 </div>
 {% endif %}
 {% endblock %}

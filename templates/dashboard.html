@@ -205,13 +205,50 @@
       {% endfor %}
       <p class="foot-note">Share of overdue RM by risk tier, using the rule-based baseline.</p>
     </div>
+
+    <div class="panel exposure">
+      <div class="panel-head">
+        <h2>Exposure by Customer</h2>
+        <a class="link" href="{{ url_for('customers') }}">All customers →</a>
+      </div>
+      {% if exposure_rows %}
+      <ul class="expo-list">
+        {% for r in exposure_rows %}
+        <li>
+          <a class="expo-top" href="{{ url_for('customer_detail', customer_id=r.id) }}">
+            <strong>{{ r.name }}</strong>
+            <span class="expo-amt">RM {{ "{:,.2f}".format(r.outstanding) }}</span>
+          </a>
+          <div class="expo-track" title="Overdue RM {{ '{:,.2f}'.format(r.overdue) }} of RM {{ '{:,.2f}'.format(r.outstanding) }} outstanding">
+            <span class="expo-bar" style="width: {{ r.pct }}%">
+              <span class="expo-over" style="width: {{ (r.overdue / r.outstanding * 100)|round|int if r.outstanding else 0 }}%"></span>
+            </span>
+          </div>
+          <small>{% if r.overdue %}RM {{ "{:,.2f}".format(r.overdue) }} overdue{% else %}nothing overdue{% endif %}</small>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="foot-note">Outstanding = unpaid invoices, red part is already overdue. Calculated from the demo invoices.</p>
+      {% else %}
+        <p class="empty">No outstanding invoices.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel activity">
+      <div class="panel-head">
+        <h2>Collection Activity</h2>
+        <span class="tag">Last 7 days</span>
+      </div>
+      <div class="chart">{{ bars(chart_activity, "Approved reminders per day, last 7 days") }}</div>
+      <p class="foot-note">Reminders a human approved (simulated sends). It shows activity only, not recovered cash: the prototype does not measure payment outcomes.</p>
+    </div>
 </section>
 
-<!-- all invoices (keeps Mark as paid) -->
+<!-- open invoices (keeps Mark as paid) -->
 <section class="panel invoices">
   <div class="panel-head">
-    <h2>All Invoices</h2>
-    <span class="tag">Synthetic demo data</span>
+    <h2>Open Invoices</h2>
+    <a class="link" href="{{ url_for('invoices') }}">All invoices, paid and unpaid →</a>
   </div>
   <div class="table-wrap">
     <table class="data-table">
@@ -228,7 +265,7 @@
       <tbody>
         {% for inv in invoices %}
         <tr>
-          <td>{{ inv.customer_name }}<br><span class="mono">{{ inv.invoice_no }}</span></td>
+          <td><a class="text-link" href="{{ url_for('customer_detail', customer_id=inv.customer_id) }}">{{ inv.customer_name }}</a><br><span class="mono">{{ inv.invoice_no }}</span></td>
           <td class="num">{{ "{:,.2f}".format(inv.amount) }}</td>
           <td class="nowrap">{{ inv.due_date }}</td>
           <td>
@@ -241,6 +278,7 @@
           <td class="action">
             {% if inv.status != "Paid" %}
             <form class="inline" method="post" action="{{ url_for('mark_invoice_paid', invoice_id=inv.id) }}">
+              <input type="hidden" name="next" value="{{ request.path }}">
               <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
             </form>
             {% endif %}
