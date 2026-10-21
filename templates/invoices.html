@@ -60,6 +60,11 @@
               <input type="hidden" name="next" value="{{ request.path }}">
               <button type="submit" class="btn btn-small btn-ghost">Mark as paid</button>
             </form>
+            {% elif row.undoable %}
+            <form class="inline" method="post" action="{{ url_for('mark_invoice_unpaid', invoice_id=inv.id) }}">
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <button type="submit" class="btn btn-small btn-ghost" title="Undo: put this invoice back to unpaid">↩ Undo paid</button>
+            </form>
             {% endif %}
           </td>
         </tr>

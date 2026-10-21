@@ -28,6 +28,7 @@ Invoice status lifecycle:
     Unpaid  --(owner approves a reminder)-->  Reminded  --(payment received)-->  Paid
 """
 
+import copy
 from datetime import date, datetime, time, timedelta
 
 TODAY = date.today()
@@ -172,6 +173,14 @@ ACTIVITY_LOG = [
     ),
 ]
 
+# A copy of the starting state, so the demo can be put back exactly as it began.
+_STARTING_INVOICES = copy.deepcopy(INVOICES)
+_STARTING_LOG = copy.deepcopy(ACTIVITY_LOG)
+
+# Invoices that were marked paid during this run (invoice id -> status before).
+# Only these can be undone; the paid history that came with the demo data stays.
+_PAID_IN_SESSION = {}
+
 
 def mark_overdue_invoices():
     """
@@ -257,10 +266,39 @@ def mark_paid(invoice_id):
     if invoice is None:
         return False
     if invoice["status"] != "Paid":
+        _PAID_IN_SESSION[invoice_id] = invoice["status"]
         invoice["status"] = "Paid"
         invoice["paid_date"] = date.today()
     _sync_customer_fields()
     return True
+
+
+def can_undo_paid(invoice_id):
+    """Only a payment marked during this run can be undone."""
+    return invoice_id in _PAID_IN_SESSION
+
+
+def mark_unpaid(invoice_id):
+    """Undo a 'Mark as paid' (for example it was clicked by mistake).
+
+    The invoice goes back to the status it had before, and the payment date
+    is removed, so it no longer counts on the customer's payment record."""
+    invoice = get_invoice_by_id(invoice_id)
+    if invoice is None or invoice_id not in _PAID_IN_SESSION:
+        return False
+    invoice["status"] = _PAID_IN_SESSION.pop(invoice_id)
+    invoice["paid_date"] = None
+    _sync_customer_fields()
+    return True
+
+
+def reset_demo_data():
+    """Puts the synthetic invoices and the activity log back to the way they
+    started. Edits the lists in place, because other modules hold references."""
+    INVOICES[:] = copy.deepcopy(_STARTING_INVOICES)
+    ACTIVITY_LOG[:] = copy.deepcopy(_STARTING_LOG)
+    _PAID_IN_SESSION.clear()
+    _sync_customer_fields()
 
 
 # --- Customer views -----------------------------------------------------

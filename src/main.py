@@ -37,8 +37,11 @@ from data import (
     customer_timeline,
     get_invoice_by_id,
     is_overdue,
+    can_undo_paid,
     log_activity,
     mark_paid,
+    mark_unpaid,
+    reset_demo_data,
 )
 from reminder_ai import (
     LANGUAGES,
@@ -323,6 +326,22 @@ def mark_invoice_paid(invoice_id):
     return redirect(_safe_next("dashboard"))
 
 
+@app.route("/mark-unpaid/<int:invoice_id>", methods=["POST"])
+def mark_invoice_unpaid(invoice_id):
+    """Undo for a 'Mark as paid' clicked by mistake. Only works for payments
+    marked during this run; the paid history in the demo data is left alone."""
+    if not mark_unpaid(invoice_id):
+        return "This payment cannot be undone", 400
+    return redirect(_safe_next("invoices"))
+
+
+@app.route("/reset-demo", methods=["POST"])
+def reset_demo():
+    """Puts the synthetic data back to its starting state (handy before a demo)."""
+    reset_demo_data()
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/activity-log")
 def activity_log():
     """OUTCOME step — every approved reminder is visible here, auditable."""
@@ -398,6 +417,7 @@ def invoices():
             "inv": inv,
             "overdue": overdue,
             "days_overdue": (date.today() - inv["due_date"]).days if overdue else 0,
+            "undoable": can_undo_paid(inv["id"]),
         })
     counts = {
         "all": len(rows),
