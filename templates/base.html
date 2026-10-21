@@ -70,6 +70,35 @@
     </main>
   </div>
   <script>
+    // KPI numbers count up from 0 to the real value (the final text is exactly the computed number)
+    (function () {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      document.querySelectorAll(".kpi-value").forEach(function (el) {
+        var node = null;
+        el.childNodes.forEach(function (n) { if (!node && n.nodeType === 3 && /\d/.test(n.nodeValue)) node = n; });
+        if (!node) return;
+        var original = node.nodeValue;
+        var m = original.match(/([\d,]+(?:\.\d+)?)/);
+        if (!m) return;
+        var raw = m[1], target = parseFloat(raw.replace(/,/g, ""));
+        var decimals = (raw.split(".")[1] || "").length, grouped = raw.indexOf(",") !== -1;
+        var start = null, duration = 900;
+        function fmt(v) {
+          var s = v.toFixed(decimals);
+          return grouped ? Number(s).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : s;
+        }
+        function frame(ts) {
+          if (start === null) start = ts;
+          var p = Math.min((ts - start) / duration, 1), eased = 1 - Math.pow(1 - p, 3);
+          node.nodeValue = original.replace(raw, p < 1 ? fmt(target * eased) : raw);
+          if (p < 1) requestAnimationFrame(frame);
+        }
+        node.nodeValue = original.replace(raw, fmt(0));
+        setTimeout(function () { requestAnimationFrame(frame); }, 250);
+      });
+    })();
+  </script>
+  <script>
     // dark / light switch; the choice is remembered in this browser only
     (function () {
       var root = document.documentElement;
