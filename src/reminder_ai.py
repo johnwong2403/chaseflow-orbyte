@@ -4,7 +4,8 @@ DECISION LOGIC step of the automation journey.
 For one overdue invoice, this module asks an AI model (Google Gemini) to:
   1. judge the risk tier (low / medium / high)
   2. recommend what the SME owner should do next
-  3. draft a reminder message in a tone that matches that risk
+  3. draft a reminder message in a tone that matches that risk, written in the
+     language the customer does business in (English / Bahasa Malaysia / Chinese)
 
 A human always reviews and approves the result before anything is sent.
 
@@ -21,9 +22,37 @@ import os
 
 import requests
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 VALID_TIERS = ("low", "medium", "high")
+
+# Languages a Malaysian SME commonly uses with its customers.
+#   label  -> shown on the language switch
+#   prompt -> how we describe it to the AI
+#   signoff-> how the message ends
+LANGUAGES = {
+    "en": {
+        "label": "English",
+        "prompt": "English",
+        "signoff": "Accounts Team",
+    },
+    "ms": {
+        "label": "Bahasa Malaysia",
+        "prompt": "Bahasa Malaysia, polite but natural, as used in Malaysian business WhatsApp chats",
+        "signoff": "Pasukan Akaun",
+    },
+    "zh": {
+        "label": "中文",
+        "prompt": "Simplified Chinese, polite and natural, as used in Malaysian business WhatsApp chats",
+        "signoff": "财务部",
+    },
+}
+DEFAULT_LANGUAGE = "en"
+
+
+def normalise_language(code) -> str:
+    """Any unknown/missing language code falls back to English."""
+    return code if code in LANGUAGES else DEFAULT_LANGUAGE
 
 
 # --------------------------------------------------------------------------
@@ -61,31 +90,72 @@ def assess_invoice_risk(invoice: dict) -> dict:
     }
 
 
-def _rule_based_message(invoice: dict, tone: str) -> str:
+def _rule_based_message(invoice: dict, tone: str, language: str) -> str:
+    """Fixed templates, 3 tones x 3 languages. Used only if the AI is unavailable."""
     name = invoice["customer_name"]
-    amount = invoice["amount"]
+    no = invoice.get("invoice_no", "your invoice")
+    amount = f"RM{invoice['amount']:.2f}"
     days = invoice.get("days_overdue", 0)
+
+    if language == "ms":
+        if tone == "gentle":
+            return (
+                f"Hai {name}, ini peringatan mesra bahawa invois {no} ({amount}) telah "
+                f"tamat tempoh {days} hari yang lalu. Bolehkah anda maklumkan bila "
+                f"pembayaran boleh dibuat? Terima kasih! — Pasukan Akaun"
+            )
+        if tone == "firm":
+            return (
+                f"Salam {name}, ini susulan mengenai invois {no} ({amount}) yang telah "
+                f"tertunggak {days} hari. Sila jelaskan pembayaran secepat mungkin, atau "
+                f"hubungi kami jika terdapat sebarang masalah. — Pasukan Akaun"
+            )
+        return (
+            f"Salam {name}, invois {no} ({amount}) telah tertunggak terlalu lama "
+            f"({days} hari) dan ini bukan kali pertama pembayaran dilewatkan. Sila "
+            f"jelaskan dengan segera bagi mengelakkan tempahan akan datang dijeda. "
+            f"Hubungi kami hari ini untuk menyelesaikannya. — Pasukan Akaun"
+        )
+
+    if language == "zh":
+        if tone == "gentle":
+            return (
+                f"{name} 您好，温馨提醒：发票 {no}（{amount}）已逾期 {days} 天。"
+                f"请问何时可以安排付款？谢谢！— 财务部"
+            )
+        if tone == "firm":
+            return (
+                f"{name} 您好，关于发票 {no}（{amount}），现已逾期 {days} 天。"
+                f"请尽快安排付款；如有任何问题，也请及时与我们联系。— 财务部"
+            )
+        return (
+            f"{name} 您好，发票 {no}（{amount}）已严重逾期（{days} 天），"
+            f"且这已不是第一次延迟付款。请立即结清，以免影响后续订单。"
+            f"请今天与我们联系处理。— 财务部"
+        )
+
+    # English (default)
     if tone == "gentle":
         return (
-            f"Hi {name}, just a friendly reminder that your invoice for RM{amount:.2f} "
+            f"Hi {name}, just a friendly reminder that invoice {no} ({amount}) "
             f"was due {days} day(s) ago. Could you let us know when we can expect "
-            f"payment? Thank you!"
+            f"payment? Thank you! — Accounts Team"
         )
     if tone == "firm":
         return (
-            f"Dear {name}, this is a follow-up on your outstanding invoice of "
-            f"RM{amount:.2f}, now {days} days overdue. Please arrange payment "
-            f"as soon as possible, or contact us if there is an issue we should know about."
+            f"Dear {name}, this is a follow-up on invoice {no} ({amount}), now "
+            f"{days} days overdue. Please arrange payment as soon as possible, or "
+            f"contact us if there is an issue we should know about. — Accounts Team"
         )
     return (
-        f"Dear {name}, your invoice of RM{amount:.2f} is significantly overdue "
+        f"Dear {name}, invoice {no} ({amount}) is significantly overdue "
         f"({days} days) and this is a repeated late payment on your account. "
         f"Please settle this immediately to avoid a pause on future orders. "
-        f"Contact us today to resolve this."
+        f"Contact us today to resolve this. — Accounts Team"
     )
 
 
-def _rule_based_draft(invoice: dict) -> dict:
+def _rule_based_draft(invoice: dict, language: str) -> dict:
     days = invoice.get("days_overdue", 0)
     risk_tier = _assess_risk(days, invoice["past_late_count"])
     tone = _TONE_FOR_RISK[risk_tier]
@@ -94,7 +164,8 @@ def _rule_based_draft(invoice: dict) -> dict:
         "tone": tone,
         "recommended_action": _ACTION_FOR_RISK[risk_tier],
         "reasoning": "Rule-based fallback: based on days overdue and past late payments.",
-        "message": _rule_based_message(invoice, tone),
+        "message": _rule_based_message(invoice, tone, language),
+        "language": language,
         "source": "rules",
     }
 
@@ -103,12 +174,14 @@ def _rule_based_draft(invoice: dict) -> dict:
 # Layer 2: the AI call
 # --------------------------------------------------------------------------
 
-def _build_prompt(invoice: dict, baseline_tier: str) -> str:
+def _build_prompt(invoice: dict, baseline_tier: str, language: str) -> str:
+    lang = LANGUAGES[language]
     return f"""You are a collections assistant for a small business in Malaysia.
 An invoice is overdue. Decide how risky it is and help the owner follow up.
 
 Invoice facts:
 - Customer: {invoice["customer_name"]}
+- Invoice number: {invoice.get("invoice_no", "n/a")}
 - Amount: RM{invoice["amount"]:.2f}
 - Days overdue: {invoice.get("days_overdue", 0)}
 - Times this customer has paid late before: {invoice["past_late_count"]}
@@ -118,15 +191,16 @@ by one level if the facts justify it (for example a large amount, or a worsening
 
 Return ONLY a JSON object with exactly these keys:
 - "risk_tier": one of "low", "medium", "high"
-- "recommended_action": one sentence of practical advice for the business owner
-- "reasoning": one or two sentences explaining why you chose this tier
-- "message": a reminder message to send to the customer, 2 to 4 sentences. Tone:
-  low = friendly and gentle, medium = polite but firm, high = serious final notice.
+- "recommended_action": one sentence of practical advice for the business owner, in English
+- "reasoning": one or two sentences explaining why you chose this tier, in English
+- "message": a reminder message to send to the customer on WhatsApp, 2 to 4 short
+  sentences, written in {lang["prompt"]}. Mention the invoice number and the amount.
+  Tone: low = friendly and gentle, medium = polite but firm, high = serious final notice.
   Use only the facts above. Do not invent dates, bank details or penalties.
-  Sign off as "Accounts Team"."""
+  Sign off as "{lang["signoff"]}"."""
 
 
-def _ask_gemini(invoice: dict, baseline_tier: str) -> dict:
+def _ask_gemini(invoice: dict, baseline_tier: str, language: str) -> dict:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
@@ -135,7 +209,7 @@ def _ask_gemini(invoice: dict, baseline_tier: str) -> dict:
         GEMINI_URL.format(model=GEMINI_MODEL),
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json={
-            "contents": [{"parts": [{"text": _build_prompt(invoice, baseline_tier)}]}],
+            "contents": [{"parts": [{"text": _build_prompt(invoice, baseline_tier, language)}]}],
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "temperature": 0.4,
@@ -162,11 +236,12 @@ def _ask_gemini(invoice: dict, baseline_tier: str) -> dict:
         "recommended_action": result["recommended_action"].strip(),
         "reasoning": result["reasoning"].strip(),
         "message": result["message"].strip(),
+        "language": language,
         "source": "ai",
     }
 
 
-def generate_reminder_draft(invoice: dict) -> dict:
+def generate_reminder_draft(invoice: dict, language: str = DEFAULT_LANGUAGE) -> dict:
     """Returns the recommendation for one overdue invoice, for a human to
     review, edit and approve:
 
@@ -175,16 +250,18 @@ def generate_reminder_draft(invoice: dict) -> dict:
         "tone": "gentle" | "firm" | "final_notice",
         "recommended_action": str,
         "reasoning": str,     # why this tier
-        "message": str,       # editable draft
+        "message": str,       # editable draft, in the chosen language
+        "language": "en" | "ms" | "zh",
         "source": "ai" | "rules",   # who produced it
       }
 
     If the AI call fails for any reason (no key, network, bad output), we fall
     back to the rule-based draft so the owner is never left with nothing.
     """
+    language = normalise_language(language)
     baseline_tier = _assess_risk(invoice.get("days_overdue", 0), invoice["past_late_count"])
     try:
-        return _ask_gemini(invoice, baseline_tier)
+        return _ask_gemini(invoice, baseline_tier, language)
     except Exception as error:  # noqa: BLE001 - deliberate catch-all, see docstring
-        print(f"[reminder_ai] AI call failed, using rule-based fallback: {error}")
-        return _rule_based_draft(invoice)
+        print(f"[reminder_ai] AI call failed, using rule-based fallback: {error}", flush=True)
+        return _rule_based_draft(invoice, language)
