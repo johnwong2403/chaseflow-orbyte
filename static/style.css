@@ -780,3 +780,9 @@ body::after{
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{ animation:none !important; transition:none !important; }
 }
+
+
+/* demo tools in the sidebar */
+.demo-tools{ margin:0; }
+.demo-tools .btn{ width:100%; }
+@media (max-width:900px){ .demo-tools{ display:none; } }

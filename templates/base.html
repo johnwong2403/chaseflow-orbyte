@@ -59,6 +59,11 @@
         <p>Built as a module for the Orbyte ecosystem. No live Orbyte connection: all data is synthetic demo data and sending is simulated.</p>
       </div>
 
+      <form method="post" action="{{ url_for('reset_demo') }}" class="demo-tools"
+            onsubmit="return confirm('Reset all demo data? Paid marks and approved reminders will be cleared.');">
+        <button type="submit" class="btn btn-small btn-ghost" title="Puts the synthetic invoices and activity log back to the starting state">↺ Reset demo data</button>
+      </form>
+
       <div class="side-user">
         <span class="avatar">J</span>
         <div><strong>John</strong><small>Team ZH</small></div>
