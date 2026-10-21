@@ -30,6 +30,8 @@ from flask import Flask, Response, abort, render_template, redirect, url_for, re
 
 from charts import bar_chart, donut_segments
 from data import (
+    my_now,
+    my_today,
     CUSTOMERS,
     INVOICES,
     ACTIVITY_LOG,
@@ -80,7 +82,7 @@ RISK_ORDER = {"high": 0, "medium": 1, "low": 2}
 def _reminders_per_day(days=7):
     """Real counts from the Activity Log: how many reminders were approved on
     each of the last `days` days (oldest first). Used for the KPI mini chart."""
-    today = date.today()
+    today = my_today()
     counts = {today - timedelta(days=i): 0 for i in range(days)}
     for log in ACTIVITY_LOG:
         day = datetime.strptime(log["timestamp"], "%Y-%m-%d %H:%M:%S").date()
@@ -221,7 +223,7 @@ def dashboard():
 
     upcoming = sum(
         1 for inv in INVOICES
-        if inv["status"] in ("Unpaid", "Reminded") and inv["due_date"] >= date.today()
+        if inv["status"] in ("Unpaid", "Reminded") and inv["due_date"] >= my_today()
     )
     open_invoices = sorted(
         (i for i in INVOICES if i["status"] != "Paid"), key=lambda i: i["due_date"]
@@ -234,7 +236,7 @@ def dashboard():
     return render_template(
         "dashboard.html",
         invoices=open_invoices,
-        today=date.today().strftime("%a, %d %b %Y"),
+        today=my_today().strftime("%a, %d %b %Y"),
         overdue_count=len(overdue),
         total_overdue=total_overdue,
         high_risk_count=high_risk_count,
@@ -412,7 +414,7 @@ def _render_customer_detail(customer_id, promise_error=None, error_invoice_id=No
     for rec in summary["records"]:
         rec["pct"] = round(abs(rec["days_late"]) / spread * 100)
 
-    today = date.today()
+    today = my_today()
     return render_template(
         "customer_detail.html",
         s=summary,
@@ -470,7 +472,7 @@ def invoices():
         rows.append({
             "inv": inv,
             "overdue": overdue,
-            "days_overdue": (date.today() - inv["due_date"]).days if overdue else 0,
+            "days_overdue": (my_today() - inv["due_date"]).days if overdue else 0,
             "undoable": can_undo_paid(inv["id"]),
         })
     counts = {
@@ -492,7 +494,7 @@ def export_invoices():
     rows = []
     for inv in sorted(INVOICES, key=lambda i: i["due_date"], reverse=True):
         overdue = is_overdue(inv)
-        days = (date.today() - inv["due_date"]).days if overdue else 0
+        days = (my_today() - inv["due_date"]).days if overdue else 0
         rows.append([
             inv["invoice_no"], inv["customer_name"], f"{inv['amount']:.2f}", inv["due_date"],
             inv["status"], "yes" if overdue else "no", days,

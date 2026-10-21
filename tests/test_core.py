@@ -35,7 +35,7 @@ class PromiseTracking(unittest.TestCase):
         self.assertEqual(data.latest_promise(4)["status"], "pending")
 
     def test_log_promise_validation(self):
-        today = date.today()
+        today = data.my_today()
         self.assertIsNotNone(data.log_promise(5, today.isoformat())[0])
         self.assertIsNotNone(data.log_promise(1, (today + timedelta(days=60)).isoformat())[0])
         for bad in ((1, (today - timedelta(days=1)).isoformat()),   # in the past
@@ -48,11 +48,11 @@ class PromiseTracking(unittest.TestCase):
             self.assertTrue(error)
 
     def test_note_is_trimmed(self):
-        promise, _ = data.log_promise(5, date.today().isoformat(), "x" * 500)
+        promise, _ = data.log_promise(5, data.my_today().isoformat(), "x" * 500)
         self.assertEqual(len(promise["note"]), data.PROMISE_NOTE_MAX)
 
     def test_newer_promise_replaces_older(self):
-        later = (date.today() + timedelta(days=5)).isoformat()
+        later = (data.my_today() + timedelta(days=5)).isoformat()
         data.log_promise(4, later)
         statuses = [p["status"] for p in data.promises_for_invoice(4)]
         self.assertEqual(statuses, ["pending", "replaced"])
@@ -74,7 +74,7 @@ class PromiseTracking(unittest.TestCase):
         self.assertIsNone(data.promise_context(data.get_invoice_by_id(1)))
 
     def test_reset_restores_seed_promises(self):
-        data.log_promise(5, date.today().isoformat())
+        data.log_promise(5, data.my_today().isoformat())
         data.reset_demo_data()
         self.assertEqual(len(data.PROMISES), 2)
 

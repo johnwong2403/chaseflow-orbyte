@@ -37,9 +37,22 @@ Payment promises
 """
 
 import copy
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
-TODAY = date.today()
+# The app always uses Malaysia time (UTC+8, no daylight saving). The server itself runs on UTC,
+# so plain my_today() would show yesterday between 00:00 and 08:00 in Malaysia.
+MY_TZ = timezone(timedelta(hours=8))
+
+
+def my_now():
+    return datetime.now(MY_TZ).replace(tzinfo=None)
+
+
+def my_today():
+    return datetime.now(MY_TZ).date()
+
+
+TODAY = my_today()
 
 
 def _days(n):
@@ -137,7 +150,7 @@ def get_customer(customer_id):
 
 
 def _seed_entry(days_ago, hour, invoice_id, invoice_no, customer_name, message, risk_tier, language):
-    when = datetime.now().replace(hour=hour, minute=15, second=0, microsecond=0) - timedelta(days=days_ago)
+    when = my_now().replace(hour=hour, minute=15, second=0, microsecond=0) - timedelta(days=days_ago)
     invoice = get_invoice_by_id(invoice_id) if invoice_id else None
     return {
         "timestamp": when.strftime("%Y-%m-%d %H:%M:%S"),
@@ -191,7 +204,7 @@ PROMISE_NOTE_MAX = 120
 
 def _seed_promise(id, invoice_id, promised_in_days, created_days_ago, note):
     invoice = get_invoice_by_id(invoice_id)
-    created = datetime.now().replace(hour=14, minute=30, second=0, microsecond=0) - timedelta(days=created_days_ago)
+    created = my_now().replace(hour=14, minute=30, second=0, microsecond=0) - timedelta(days=created_days_ago)
     return {
         "id": id,
         "invoice_id": invoice_id,
@@ -236,7 +249,7 @@ def mark_overdue_invoices():
     """
     _sync_customer_fields()
     overdue = []
-    today = date.today()
+    today = my_today()
     for inv in INVOICES:
         if inv["status"] in ("Unpaid", "Reminded") and inv["due_date"] < today:
             inv["days_overdue"] = (today - inv["due_date"]).days
@@ -279,7 +292,7 @@ def log_activity(invoice_id, customer_name, message_sent, risk_tier="", language
     """
     invoice = get_invoice_by_id(invoice_id)
     entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": my_now().strftime("%Y-%m-%d %H:%M:%S"),
         "invoice_id": invoice_id,
         "invoice_no": invoice["invoice_no"] if invoice else "",
         "customer_id": invoice["customer_id"] if invoice else None,
@@ -293,7 +306,7 @@ def log_activity(invoice_id, customer_name, message_sent, risk_tier="", language
 
     if invoice is not None and invoice["status"] != "Paid":
         invoice["status"] = "Reminded"
-        invoice["last_reminded"] = date.today()
+        invoice["last_reminded"] = my_today()
     return entry
 
 
@@ -308,7 +321,7 @@ def mark_paid(invoice_id):
     if invoice["status"] != "Paid":
         _PAID_IN_SESSION[invoice_id] = invoice["status"]
         invoice["status"] = "Paid"
-        invoice["paid_date"] = date.today()
+        invoice["paid_date"] = my_today()
     _sync_customer_fields()
     return True
 
@@ -363,7 +376,7 @@ def promise_status(promise):
     invoice = get_invoice_by_id(promise["invoice_id"])
     if invoice["status"] == "Paid" and invoice["paid_date"] is not None:
         return "kept" if invoice["paid_date"] <= promise["promised_date"] else "paid_late"
-    if promise["promised_date"] < date.today():
+    if promise["promised_date"] < my_today():
         return "broken"
     newer = any(p["invoice_id"] == promise["invoice_id"] and p["id"] > promise["id"] for p in PROMISES)
     return "replaced" if newer else "pending"
@@ -372,7 +385,7 @@ def promise_status(promise):
 def _with_status(promise):
     invoice = get_invoice_by_id(promise["invoice_id"])
     status = promise_status(promise)
-    days_to_go = (promise["promised_date"] - date.today()).days
+    days_to_go = (promise["promised_date"] - my_today()).days
     return {
         **promise,
         "status": status,
@@ -459,7 +472,7 @@ def log_promise(invoice_id, promised_date_text, note=""):
         promised = datetime.strptime((promised_date_text or "").strip(), "%Y-%m-%d").date()
     except ValueError:
         return None, "Please choose a valid date."
-    today = date.today()
+    today = my_today()
     if promised < today:
         return None, "The promised date cannot be in the past."
     if promised > today + timedelta(days=PROMISE_MAX_DAYS):
@@ -471,7 +484,7 @@ def log_promise(invoice_id, promised_date_text, note=""):
         "customer_id": invoice["customer_id"],
         "promised_date": promised,
         "note": " ".join((note or "").split())[:PROMISE_NOTE_MAX],
-        "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "created": my_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     PROMISES.append(promise)
     return promise, None
@@ -503,7 +516,7 @@ def promise_overview():
 # Nothing is stored twice and no history is invented.
 
 def is_overdue(invoice):
-    return invoice["status"] in ("Unpaid", "Reminded") and invoice["due_date"] < date.today()
+    return invoice["status"] in ("Unpaid", "Reminded") and invoice["due_date"] < my_today()
 
 
 def _log_time(entry):
@@ -533,7 +546,7 @@ def customer_summary(customer_id):
     if customer is None:
         return None
     _sync_customer_fields()
-    today = date.today()
+    today = my_today()
 
     invoices = customer_invoices(customer_id)
     open_invoices = [i for i in invoices if i["status"] in ("Unpaid", "Reminded")]
