@@ -24,7 +24,7 @@
 | Live Demo         | https://chaseflow-orbyte.replit.app                     |
 | RunPod Endpoint   | Not used (no GPU workload, see "How We Use RunPod")     |
 | Slide Deck        | [SDC2026 ZH ChaseFlow for Orbyte.pptx](submission/SDC2026%20ZH%20ChaseFlow%20for%20Orbyte.pptx) |
-| Demo Video        | https://youtu.be/miKphYBVvJk                            |
+| Demo Video        | https://youtu.be/_GFfbwycyyA                            |
 
 ---
 
