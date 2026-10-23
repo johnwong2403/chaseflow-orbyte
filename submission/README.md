@@ -16,7 +16,7 @@ Submission documents for Team ZH: Preliminary (PRD), Tech & Tools Declaration, R
 | Resource | Link |
 | --- | --- |
 | Live prototype (Replit) | https://chaseflow-orbyte.replit.app |
-| Demo video (YouTube) | https://youtu.be/miKphYBVvJk |
+| Demo video (YouTube) | https://youtu.be/_GFfbwycyyA |
 | Source code | https://github.com/johnwong2403/chaseflow-orbyte |
 
 See the [main README](../README.md) for the project overview, how to run it, and how AI was used.
