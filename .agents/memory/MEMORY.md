@@ -1,0 +1,1 @@
+- [Publishing installer limits](publishing-installer.md) — production pip settings did not resolve the automatic installer’s user-site failure; require actual publish evidence.
