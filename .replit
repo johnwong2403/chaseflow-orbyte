@@ -31,5 +31,3 @@ externalPort = 80
 GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_API_KEY = "AQ.Ab8RN6LuIOxJt6k2CGCwSvaHzZzNAeur_s_VRkBrHoUAuv5oOw"
 
-[userenv.production]
-PIP_USER = "false"
