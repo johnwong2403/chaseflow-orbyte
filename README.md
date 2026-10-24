@@ -222,8 +222,8 @@ RunPod is **not used**. The only AI component is the Google Gemini API, which ru
 - [x] Replit used, with proof of use in `submission/`
 - [x] RunPod: not used, explained above
 - [x] Submission template completed in `submission/`
-- [ ] "How to Run" steps verified
-- [ ] No API keys or secrets committed to the repository
+- [x] "How to Run" steps verified
+- [x] No API keys or secrets committed to the repository
 
 ## License
 
