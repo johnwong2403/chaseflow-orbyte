@@ -23,8 +23,8 @@
 | Replit Project    | https://replit.com/@johnwong2403/chaseflow-orbyte       |
 | Live Demo         | https://chaseflow-orbyte.replit.app                     |
 | RunPod Endpoint   | Not used (no GPU workload, see "How We Use RunPod")     |
-| Slide Deck        | TODO: add when ready                                    |
-| Demo Video        | TODO: add the YouTube link when ready                   |
+| Slide Deck        | [SDC2026 ZH ChaseFlow for Orbyte.pptx](submission/SDC2026%20ZH%20ChaseFlow%20for%20Orbyte.pptx) |
+| Demo Video        | https://youtu.be/_GFfbwycyyA                            |
 
 ---
 
@@ -74,7 +74,6 @@ AI is used only where it adds value (explaining and writing). The risk rule, the
 
 ```
 .
-├── docs/                    # Screenshots, diagrams
 ├── src/
 │   ├── main.py              # Flask routes: dashboard, overdue, draft, approve, customers, invoices, promises
 │   ├── data.py              # Synthetic data + business logic (overdue, promises, mark paid / undo)
@@ -82,7 +81,7 @@ AI is used only where it adds value (explaining and writing). The risk rule, the
 │   └── charts.py            # Server-side SVG charts
 ├── templates/               # Jinja2 pages
 ├── static/                  # style.css, logo
-├── submission/              # Required submission documents (PDFs)
+├── submission/              # Submission documents (PRD, declaration, Replit proof, slide deck)
 ├── tests/
 │   └── test_core.py         # Unit tests (risk rules, promises, undo, AI prompt, fallback)
 ├── .env.example             # Example environment variables
@@ -218,11 +217,11 @@ RunPod is **not used**. The only AI component is the Google Gemini API, which ru
 ## Submission Checklist
 
 - [x] Team name, domain (Domain 2) and SDG track filled in
-- [ ] Slide deck link added
-- [ ] Demo video link added
-- [ ] Replit used, with proof of use in `submission/`
+- [x] Slide deck link added
+- [x] Demo video link added
+- [x] Replit used, with proof of use in `submission/`
 - [x] RunPod: not used, explained above
-- [ ] Submission template completed in `submission/`
+- [x] Submission template completed in `submission/`
 - [ ] "How to Run" steps verified
 - [ ] No API keys or secrets committed to the repository
 
