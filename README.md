@@ -160,7 +160,7 @@ python -m unittest discover tests
 - **Hosting:** the app is deployed with Replit **Autoscale** at the Live Demo link above (set to one machine so the in-memory demo data stays consistent).
 - **Secrets:** the Gemini API key is stored in Replit Secrets and read from the environment. It is never kept in the code.
 
-📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf)
+📄 Proof of use: [SDC2026 ZH REPLIT PROOF OF USE.pdf](submission/SDC2026%20ZH%20REPLIT%20PROOF%20OF%20USE.pdf)
 
 ## How We Use RunPod *(Required)*
 
